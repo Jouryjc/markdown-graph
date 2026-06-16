@@ -149,6 +149,25 @@ class GraphStore:
             char_end=row["char_end"],
         )
 
+    def delete_document(self, doc_id: str) -> None:
+        """删除文档及其所有节点/块，并清理任何端点落在该文档节点集合上的边。"""
+        node_ids = [
+            row["id"]
+            for row in self.conn.execute(
+                "SELECT id FROM nodes WHERE doc_id = ?", (doc_id,)
+            ).fetchall()
+        ]
+        node_ids.append(doc_id)  # 文档本身也可能是边的端点
+        self.conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
+        self.conn.execute("DELETE FROM nodes WHERE doc_id = ?", (doc_id,))
+        self.conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        qmarks = ",".join("?" * len(node_ids))
+        self.conn.execute(
+            f"DELETE FROM edges WHERE src IN ({qmarks}) OR dst IN ({qmarks})",
+            node_ids + node_ids,
+        )
+        self.conn.commit()
+
     def stats(self) -> dict[str, int]:
         return {
             "documents": self.conn.execute(
