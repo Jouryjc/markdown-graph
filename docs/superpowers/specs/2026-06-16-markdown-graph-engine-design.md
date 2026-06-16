@@ -17,7 +17,7 @@
 | 交付形态 | Python 库 + CLI |
 | 建图策略 | 混合：结构化骨架 + LLM 语义抽取 |
 | 存储 | 全嵌入式、零依赖（SQLite/NetworkX + LanceDB） |
-| 模型提供方 | 可插拔 provider 抽象（默认 Claude 抽取 + 可换 embedding） |
+| 模型提供方 | 可插拔 provider 抽象（默认 Claude 抽取 + Voyage embedding，均可换） |
 | 检索输出 | 排序上下文块 + 诱导子图（生成答案交给调用方） |
 | 节点粒度/融合 | 方案 C：双层混合（结构层 + 实体语义层） |
 
@@ -49,7 +49,7 @@
 | `graph` | 建结构层节点(Document/Section/Chunk)与边(CONTAINS/LINKS_TO/TAGGED) | store |
 | `extract` | LLM 抽取实体+关系，实体消歧/合并，建 MENTIONS / RELATES_TO 边 | providers, graph |
 | `embed` | 块（及实体描述）向量化 | providers, store |
-| `providers` | `LLMProvider` + `EmbeddingProvider` 抽象接口；默认 Claude，可换 OpenAI/本地 | — |
+| `providers` | `LLMProvider` + `EmbeddingProvider` 抽象接口；默认 Claude(LLM) + Voyage(embedding)，可换 OpenAI/本地 | — |
 | `store` | `GraphStore`(SQLite+NetworkX) + `VectorStore`(LanceDB)，接口可换 | sqlite/lancedb |
 | `retrieve` | 向量召回 → 实体锚定 → 图扩展 → RRF 融合 → 输出 | store |
 | `cli` | `mdgraph index/query/stats/graph export` | facade |
@@ -150,8 +150,14 @@ RetrievalResult {
 ## 10. 技术栈
 
 - Python 3.11+，`pyproject.toml` 打包（uv 或 pip 均可）。
-- 依赖：`markdown-it-py`(解析)、`networkx`(图遍历)、`lancedb`(向量)、`pydantic`(数据模型)、`anthropic`(默认 LLM provider)、`sqlite3`(stdlib)、`typer`(CLI)、`numpy`。
+- 依赖：`markdown-it-py`(解析)、`networkx`(图遍历)、`lancedb`(向量)、`pydantic`(数据模型)、`anthropic`(默认 LLM provider)、`voyageai`(默认 embedding provider)、`sqlite3`(stdlib)、`typer`(CLI)、`numpy`。
 - 测试：`pytest`。
+
+### Provider 默认与降级
+
+- **默认**：LLM = Claude（`anthropic`），embedding = Voyage（`voyageai`）；二者均通过抽象接口可换 OpenAI / 本地（`sentence-transformers`）。
+- **缺 LLM key**：跳过语义抽取，图谱降级为纯结构层（仍可用结构 + 向量检索）。
+- **缺 embedding key**：向量召回不可用，检索退化为纯图谱遍历；建议此场景切换本地 embedding provider。
 
 ## 11. CLI / 公共 API 草案
 
