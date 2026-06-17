@@ -1,29 +1,35 @@
-"""MarkdownGraph：结构索引 + 向量检索门面。"""
+"""MarkdownGraph：结构索引 + 向量检索 + 语义抽取门面。"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from mdgraph.indexer import IndexReport, StructuralIndexer
-from mdgraph.providers.base import EmbeddingProvider
+from mdgraph.providers.base import EmbeddingProvider, LLMProvider
 from mdgraph.retrieve import RetrievalResult, Retriever
 from mdgraph.store.graph_store import GraphStore
 from mdgraph.store.vector_store import VectorStore
 
 
 class MarkdownGraph:
-    def __init__(self, store_dir: str | Path, embedder: EmbeddingProvider | None = None) -> None:
+    def __init__(
+        self,
+        store_dir: str | Path,
+        embedder: EmbeddingProvider | None = None,
+        llm: LLMProvider | None = None,
+    ) -> None:
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
         self.graph_store = GraphStore(self.store_dir / "graph.db")
         self.embedder = embedder
+        self.llm = llm
         self.vector_store: VectorStore | None = None
         if embedder is not None:
             self.vector_store = VectorStore(
                 self.store_dir / "vectors", model_name=embedder.name, dim=embedder.dim
             )
         self.indexer = StructuralIndexer(
-            self.graph_store, vector_store=self.vector_store, embedder=embedder
+            self.graph_store, vector_store=self.vector_store, embedder=embedder, llm=llm
         )
 
     def build(self, paths, root=None, max_chars: int = 1200, overlap: int = 150) -> IndexReport:

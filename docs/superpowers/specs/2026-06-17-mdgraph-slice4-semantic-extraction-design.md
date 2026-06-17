@@ -108,3 +108,13 @@ ExtractionBundle {
 
 - 切片 5（图扩展 + RRF）：语义层已就位——向量召回的种子 chunk 可沿 `MENTIONS` 找实体、再沿 `RELATES_TO`/`MENTIONS` 扩展到相关 chunk；实体描述向量化在此做。`GraphStore.neighbors(node, edge_types, hops)` 已支持按边类型多跳。
 - 切片 6（增量 + 孤儿回收）：删文件后回收无 MENTIONS 的孤儿 Entity 及其 RELATES_TO；与跨存储 reconcile 合并实现。
+
+## 12. 实现期发现 / 后续切片注意事项
+
+切片 4 实现完成后整体审查沉淀：
+
+- **切片 5 关系权重**：`RELATES_TO` 边的语义类型在 `meta["type"]`，`weight` 仍是默认 1.0。若 RRF/图打分要按关系类型加权，需在切片 5 自行从 `meta.type` 派生权重（数据已在，未预聚合）。
+- **切片 5 遍历方向**：`RELATES_TO` 在存储中是有向的，但 `GraphStore.neighbors()` 做**无向**扩展——这通常正是扩展想要的，切片 5 确认即可。
+- **切片 6 孤儿回收谓词**：删文件后，仅在该文档出现过的 Entity 残留为无入边 MENTIONS 的孤儿节点 + 悬挂 RELATES_TO（`doc_id=None` 屏蔽了 `delete_document`，与 Tag 同款）。回收谓词很干净：「ENTITY 节点入边 MENTIONS 数为 0 → 删该节点及其相连 RELATES_TO」，一个回收例程可同时覆盖 Tag。
+- **type 非严格 first-seen**：实体 `name` 是首见 canonical，但 `type` 在 `("", "concept")` 时会被后续非默认 type 覆盖（把 `concept` 当弱默认，符合 spec 只钉死 name）。
+- MockLLMProvider 把大写词当实体，链接文本里的 `See` 等会被误当实体——纯 mock 假象，真实 provider（缓做）无此问题。

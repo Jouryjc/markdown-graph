@@ -24,3 +24,20 @@ def test_tag_id_is_case_insensitive_and_quote_free():
     assert tag_id("Foo") == tag_id("foo")
     assert tag_id("foo").startswith("t_")
     assert _SAFE.match(tag_id("foo/bar"))
+
+
+def test_normalize_name_lowercases_and_collapses():
+    from mdgraph.ids import normalize_name
+
+    assert normalize_name("Foo, Bar") == "foo bar"
+    assert normalize_name("foo   bar") == "foo bar"
+    assert normalize_name("  Baz!  ") == "baz"
+
+
+def test_entity_id_normalizes_and_is_quote_free():
+    from mdgraph.ids import entity_id
+
+    assert entity_id("Foo Bar") == entity_id("foo,  bar")
+    assert entity_id("X").startswith("e_")
+    assert _SAFE.match(entity_id("foo bar"))
+    assert entity_id("a") != entity_id("b")

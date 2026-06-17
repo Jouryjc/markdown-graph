@@ -1,4 +1,4 @@
-"""StructuralIndexer：两遍法把 markdown 索引成结构图（无 LLM）。"""
+"""StructuralIndexer：把 markdown 索引成图（结构层 + 可选向量嵌入 + 可选 LLM 实体抽取）。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from posixpath import dirname, join, normpath
 
 from mdgraph.chunk import chunk_sections
 from mdgraph.embed import embed_texts
+from mdgraph.extract import extract_graph
 from mdgraph.ids import doc_id as make_doc_id, section_id, tag_id
 from mdgraph.ingest import discover, read_file
 from mdgraph.models import Chunk, Document, Edge, EdgeType, Node, NodeType
@@ -23,6 +24,7 @@ class IndexReport:
     errors: list[tuple[str, str]] = field(default_factory=list)
     unresolved_links: int = 0
     removed: int = 0
+    entities: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -40,10 +42,11 @@ class _DocCtx:
 
 
 class StructuralIndexer:
-    def __init__(self, store: GraphStore, vector_store=None, embedder=None) -> None:
+    def __init__(self, store: GraphStore, vector_store=None, embedder=None, llm=None) -> None:
         self.store = store
         self.vector_store = vector_store
         self.embedder = embedder
+        self.llm = llm
 
     def index(self, paths, root=None, max_chars: int = 1200, overlap: int = 150) -> IndexReport:
         report = IndexReport()
@@ -106,6 +109,8 @@ class StructuralIndexer:
 
         if self.vector_store is not None and self.embedder is not None:
             self._embed_and_store(docs, report)
+        if self.llm is not None:
+            self._extract_and_store(docs, report)
         return report
 
     def _relpath(self, f: Path, root: Path | None) -> str:
@@ -240,6 +245,47 @@ class StructuralIndexer:
             return
         vectors = embed_texts(self.embedder, texts)
         self.vector_store.add(chunk_ids, vectors, texts, metas)
+
+    def _extract_and_store(self, docs: list["_DocCtx"], report: IndexReport) -> None:
+        errored = {r[0] for r in report.errors}
+        chunks: list[tuple[str, str]] = []
+        for ctx in docs:
+            if ctx.relpath in errored:
+                report.warnings.append(f"skipped extraction for errored doc: {ctx.relpath}")
+                continue
+            for ch in ctx.chunks:
+                chunks.append((ch.id, ch.text))
+        if not chunks:
+            return
+        bundle = extract_graph(chunks, self.llm)
+        for cid in bundle.failed_chunks:
+            report.warnings.append(f"entity extraction failed for chunk: {cid}")
+        with self.store.transaction():
+            for ent in bundle.entities:
+                self.store.upsert_node(
+                    Node(
+                        id=ent.id,
+                        type=NodeType.ENTITY,
+                        doc_id=None,
+                        meta={
+                            "name": ent.name,
+                            "type": ent.type,
+                            "description": ent.description,
+                            "aliases": ent.aliases,
+                        },
+                    ),
+                    commit=False,
+                )
+            for chunk_id, eid in bundle.mentions:
+                self.store.upsert_edge(
+                    Edge(src=chunk_id, dst=eid, type=EdgeType.MENTIONS), commit=False
+                )
+            for sid, tid, rtype in bundle.relations:
+                self.store.upsert_edge(
+                    Edge(src=sid, dst=tid, type=EdgeType.RELATES_TO, meta={"type": rtype}),
+                    commit=False,
+                )
+        report.entities += len(bundle.entities)
 
     def _chunk_for_pos(self, chunks: list[Chunk], pos: int) -> Chunk:
         for ch in chunks:

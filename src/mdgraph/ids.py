@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 
 
 def _h(s: str) -> str:
@@ -23,3 +24,15 @@ def chunk_id(doc_id: str, sec_idx: int, chunk_idx: int) -> str:
 
 def tag_id(name: str) -> str:
     return "t_" + _h(name.lower())
+
+
+_NORM_RE = re.compile(r"\W+")
+
+
+def normalize_name(name: str) -> str:
+    """小写 + 把非单词字符（标点/空白，Unicode 友好）连续段折成单个空格 + 首尾 strip。"""
+    return _NORM_RE.sub(" ", name.lower()).strip()
+
+
+def entity_id(name: str) -> str:
+    return "e_" + _h(normalize_name(name))
