@@ -1,4 +1,4 @@
-"""StructuralIndexer：两遍法把 markdown 索引成结构图（无 LLM）。"""
+"""StructuralIndexer：把 markdown 索引成图（结构层 + 可选向量嵌入 + 可选 LLM 实体抽取）。"""
 
 from __future__ import annotations
 
