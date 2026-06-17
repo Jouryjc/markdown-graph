@@ -1,5 +1,6 @@
 """mdgraph: Markdown knowledge graph + vector dual-engine retrieval."""
 
+from mdgraph.engine import MarkdownGraph
 from mdgraph.models import (
     Chunk,
     Document,
@@ -17,6 +18,7 @@ __all__ = [
     "Document",
     "Edge",
     "EdgeType",
+    "MarkdownGraph",
     "Node",
     "NodeType",
 ]
