@@ -57,3 +57,19 @@ def test_dangling_link_recorded_in_meta_not_edge(tmp_path):
     metas = [d["meta"].get("unresolved_links") for _, d in g.nodes(data=True) if d["type"] == NodeType.CHUNK.value]
     assert any(m and "[[Nonexistent]]" in m for m in metas)
     mg.close()
+
+
+def test_cross_doc_links_rebuild_idempotent(tmp_path):
+    write(tmp_path, "a.md", "# A\n\n[[b]] and [[b#Details]]\n")
+    write(tmp_path, "b.md", "# B\n\nintro\n\n## Details\n\ndeep\n")
+    mg = MarkdownGraph(tmp_path / ".mdgraph")
+    mg.build([tmp_path])
+    s1 = mg.stats()
+    l1 = edges_of(mg.graph_store, EdgeType.LINKS_TO)
+    mg.build([tmp_path])
+    s2 = mg.stats()
+    l2 = edges_of(mg.graph_store, EdgeType.LINKS_TO)
+    assert s1 == s2
+    assert l1 == l2
+    assert len(l1) == 2  # [[b]] -> b doc, [[b#Details]] -> b's Details section
+    mg.close()

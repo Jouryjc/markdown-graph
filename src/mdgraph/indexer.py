@@ -87,9 +87,9 @@ class StructuralIndexer:
             if any(r for r in report.errors if r[0] == ctx.relpath):
                 continue
             try:
-                chunks_by_sec = self._make_chunks_by_sec(ctx)
-                self._build_links(ctx, chunks_by_sec, report)
-                self.store.conn.commit()
+                with self.store.transaction():
+                    chunks_by_sec = self._make_chunks_by_sec(ctx)
+                    self._build_links(ctx, chunks_by_sec, report)
             except Exception as exc:  # noqa: BLE001
                 report.errors.append((ctx.relpath, repr(exc)))
         return report
