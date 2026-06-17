@@ -223,6 +223,62 @@ class GraphStore:
         visited.discard(node_id)
         return visited
 
+    def expand(
+        self,
+        seed_ids: list[str],
+        edge_types: list[EdgeType] | None = None,
+        hops: int = 1,
+    ) -> dict[str, int]:
+        """多源无向 BFS：一次建图，从所有种子一起扩 hops 跳。
+
+        返回 {node_id: 最小跳距}，不含种子自身，忽略不在图中的种子。
+        """
+        g = self.to_networkx()
+        allowed = {e.value for e in edge_types} if edge_types else None
+        frontier = {s for s in seed_ids if s in g}
+        visited = set(frontier)
+        dist: dict[str, int] = {}
+        for h in range(1, hops + 1):
+            nxt: set[str] = set()
+            for n in frontier:
+                for _, d, key in g.out_edges(n, keys=True):
+                    if (allowed is None or key in allowed) and d not in visited:
+                        nxt.add(d)
+                for s, _, key in g.in_edges(n, keys=True):
+                    if (allowed is None or key in allowed) and s not in visited:
+                        nxt.add(s)
+            for node in nxt:
+                dist[node] = h
+            visited |= nxt
+            frontier = nxt
+        return dist
+
+    def subgraph(self, node_ids: list[str]) -> dict:
+        """给定节点 + 其 1 跳邻居的诱导子图（确定性排序）。"""
+        g = self.to_networkx()
+        keep: set[str] = {n for n in node_ids if n in g}
+        for n in list(keep):
+            for _, d, _ in g.out_edges(n, keys=True):
+                keep.add(d)
+            for s, _, _ in g.in_edges(n, keys=True):
+                keep.add(s)
+        nodes = sorted(
+            (
+                {"id": n, "type": g.nodes[n]["type"], "meta": g.nodes[n].get("meta", {})}
+                for n in keep
+            ),
+            key=lambda x: x["id"],
+        )
+        edges = sorted(
+            (
+                {"src": u, "dst": v, "type": key}
+                for u, v, key in g.edges(keys=True)
+                if u in keep and v in keep
+            ),
+            key=lambda e: (e["src"], e["dst"], e["type"]),
+        )
+        return {"nodes": nodes, "edges": edges}
+
     @contextmanager
     def transaction(self):
         """批量写：块内用 commit=False，退出时一次提交；异常回滚。"""

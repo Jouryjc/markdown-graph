@@ -86,3 +86,13 @@
 
 - 孤儿回收（删文件后无 MENTIONS 的 Entity）+ 增量索引（按 content-hash 跳过未变文件）+ CLI（`mdgraph index/query/stats/graph export`）。
 - `expand` / `subgraph` 可直接复用于 CLI 的 `graph export` 与子图可视化。
+
+## 10. 实现期发现 / 后续切片注意事项
+
+切片 5 实现完成后整体审查沉淀（均非阻塞，留给切片 6）：
+
+- **批量 `get_chunks(ids)`**：`Retriever._dual` 现在对每个扩展节点调一次 `get_chunk` 过滤 chunk（N+1 次 PK 查询，`O(扩展节点数)`，受种子 fan-out 限、非 `O(全图)`）。切片 6 加 CLI 时给 `GraphStore` 补一个 `get_chunks(ids) -> dict` 批量方法，一并消除 N+1，也利于 `graph export`。
+- **每查询两次 `to_networkx`**：`expand` 一次 + `subgraph` 一次（各 `O(V+E)`）。已达成「常数次建图、非每种子重建」目标；若切片 6 引入大语料基准，再做「按 store 缓存图 + 写时失效」或「单次 retrieve 共享一次建图」优化。
+- **score 量纲**：dual 模式 `Context.score` 是 RRF 值、纯向量模式是 `1/(1+d)` 相似度（同字段不同量纲，都越大越好、仅用于排序）。公共 API 定型时（切片 6）补一句 docstring 说明。
+- **孤儿回收与检索解耦**：`expand` 按边类型过滤、`_dual` 用 `get_chunk is not None` 过滤，孤儿 Entity（无 MENTIONS）永远进不了 Context——孤儿回收是纯存储卫生，不扰动检索语义。
+- **增量与确定性**：检索每次读 `to_networkx` 新快照，增量索引改动即时生效、无缓存需失效；只要切片 6 增量删除照旧用 `delete_document`（已按端点清边），`expand`/`subgraph` 不会走进已删节点。
