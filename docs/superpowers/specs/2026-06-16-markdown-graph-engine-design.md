@@ -187,3 +187,24 @@ print(result.subgraph.nodes, result.subgraph.edges)
 4. LLM 语义抽取 + 实体消歧（接入语义层）。
 5. 图扩展 + RRF 融合（双引擎合体）。
 6. 增量索引 + CLI 打磨。
+
+## 13. 实现期发现 / 后续切片设计注意事项
+
+切片 1（基础层：models / providers / GraphStore / VectorStore）实现完成后，整体审查沉淀的待办（按相关切片）：
+
+### 切片 2（parse + chunk + 结构建图）
+- **批量写入**：`GraphStore` 现在每次 upsert 都 `commit()`，单文档会写大量 chunk/node/edge。批量索引前加事务/批量 API（如 `with store.transaction():` 或 `upsert_chunks([...])`），避免逐行 fsync。
+- **按文档读取访问器**：补 `list_chunks_by_doc` / `list_nodes_by_doc`（索引 `idx_chunks_doc`/`idx_nodes_doc` 已就绪），供增量重建时 diff/重嵌入。
+- **chunk_id 字符集约束**：`VectorStore.delete()` 用字符串插值拼 LanceDB 谓词，依赖 id 不含引号。chunk-id 生成处必须限定字符集（hash/UUID/`[A-Za-z0-9_-]`）并文档化；或在 delete 处转义 `'`→`''`。
+- **section_path 分隔符**：`Chunk.section_path` 现为自由字符串（测试用 `"H1>H2"`）。chunker 须统一并固定一种分隔符约定。
+
+### 切片 3+（向量检索 / 图融合）
+- **score 方向**：`VectorStore.search()` 返回的 `score` 即 LanceDB `_distance`，**越小越好**（L2）。现有测试仅因 LanceDB 预排序而通过、未断言方向。接 RRF 融合时必须做反转/排名变换，并在 `search()` 返回处加注释，避免方向被踩。
+- **图遍历性能**：`GraphStore.to_networkx()` 每次 `neighbors()` 都重建全图。检索对 N 个种子各扩展会 N 次全图重建。改为「在 store 上缓存 MultiDiGraph + 写时失效」或「直接基于已建索引的 edges 表做 BFS」（成本随 frontier 而非全图）。
+- **跨存储级联（spec §7）**：`GraphStore.delete_document()` 只清 SQLite；需要一个 index/engine 门面把文档删除同时 fan-out 到 `VectorStore.delete(chunk_ids)`。删除原语已就绪，缺编排层。
+
+### 已在切片 1 内解决
+- ~~`vectors` 表缺 `meta_json` 列~~ → 已补（Task 8），`add()` 支持可选 `metas`，`search()` 回传 `meta`。
+
+### 备注
+- `numpy` / `typer` 已声明但本切片未用（留给后续 embedding 数学 / CLI），无害。
