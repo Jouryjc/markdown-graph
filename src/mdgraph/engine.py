@@ -41,7 +41,9 @@ class MarkdownGraph:
     def retrieve(self, query: str, k: int = 8) -> RetrievalResult:
         if self.embedder is None or self.vector_store is None:
             raise RuntimeError("no embedder configured")
-        return Retriever(self.vector_store, self.embedder).retrieve(query, k=k)
+        return Retriever(
+            self.vector_store, self.embedder, graph_store=self.graph_store
+        ).retrieve(query, k=k)
 
     def stats(self) -> dict[str, int]:
         s = self.graph_store.stats()
