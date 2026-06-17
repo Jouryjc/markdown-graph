@@ -48,3 +48,23 @@ def test_indexer_without_vector_store_is_structure_only(tmp_path):
     assert report.indexed == 1
     assert gs.stats()["chunks"] >= 1
     gs.close()
+
+
+def test_errored_doc_embedding_skip_is_warned(tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    write(src, "good.md", "# G\n\nok\n")
+    write(src, "bad.md", "# B\n\nboom\n")
+    gs, vs, idx = make_indexer(tmp_path)
+    orig = idx._build_doc
+
+    def maybe_fail(ctx, report):
+        if ctx.relpath == "bad.md":
+            raise RuntimeError("boom")
+        return orig(ctx, report)
+
+    monkeypatch.setattr(idx, "_build_doc", maybe_fail)
+    report = idx.index([src], root=src)
+    # bad.md recorded as error, and embedding-skip surfaced as a warning
+    assert any("bad.md" in e[0] for e in report.errors)
+    assert any("bad.md" in w for w in report.warnings)
+    gs.close()

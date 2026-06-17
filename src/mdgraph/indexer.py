@@ -213,19 +213,22 @@ class StructuralIndexer:
                     )
 
     def _purge_vectors(self, doc_id: str) -> None:
+        # Intentionally outside the graph transaction: vectors are a derived
+        # index, and the next build re-syncs if a per-doc graph txn rolls back.
         if self.vector_store is None:
             return
         ids = [c.id for c in self.store.list_chunks_by_doc(doc_id)]
         if ids:
             self.vector_store.delete(ids)
 
-    def _embed_and_store(self, docs, report) -> None:
+    def _embed_and_store(self, docs: list["_DocCtx"], report: IndexReport) -> None:
         errored = {r[0] for r in report.errors}
         chunk_ids: list[str] = []
         texts: list[str] = []
         metas: list[dict] = []
         for ctx in docs:
             if ctx.relpath in errored:
+                report.warnings.append(f"skipped embedding for errored doc: {ctx.relpath}")
                 continue
             for ch in ctx.chunks:
                 chunk_ids.append(ch.id)
