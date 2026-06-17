@@ -13,6 +13,11 @@ _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
+_WIKI_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
+_MD_RE = re.compile(r"\[([^\]\n]*)\]\(([^)\n]+)\)")
+_TAG_RE = re.compile(r"(?<![\w#])#([A-Za-z0-9][\w/-]*)")
+_SKIP_URL_PREFIXES = ("http://", "https://", "mailto:", "ftp://")
+
 
 @dataclass
 class ParsedLink:
@@ -142,9 +147,63 @@ def _split_sections(text: str, body_offset: int) -> list[ParsedSection]:
     return sections
 
 
+def _mask_code(s: str) -> str:
+    """把 fenced/inline 代码替换为等长空格，保持偏移不变。"""
+    out = list(s)
+    for m in re.finditer(r"```.*?```|~~~.*?~~~", s, re.DOTALL):
+        for i in range(m.start(), m.end()):
+            out[i] = " "
+    masked = "".join(out)
+    out2 = list(masked)
+    for m in re.finditer(r"`[^`\n]+`", masked):
+        for i in range(m.start(), m.end()):
+            out2[i] = " "
+    return "".join(out2)
+
+
 def _extract_links(body: str, base: int) -> list[ParsedLink]:
-    return []
+    masked = _mask_code(body)
+    links: list[ParsedLink] = []
+    for m in _WIKI_RE.finditer(masked):
+        target_part = m.group(1).split("|", 1)[0]
+        if "#" in target_part:
+            target, anchor = target_part.split("#", 1)
+        else:
+            target, anchor = target_part, None
+        links.append(
+            ParsedLink(
+                raw=m.group(0),
+                target=target.strip(),
+                anchor=anchor.strip() if anchor else None,
+                kind="wiki",
+                pos=base + m.start(),
+            )
+        )
+    for m in _MD_RE.finditer(masked):
+        url = m.group(2).strip()
+        if url.lower().startswith(_SKIP_URL_PREFIXES):
+            continue
+        if "#" in url:
+            target, anchor = url.split("#", 1)
+        else:
+            target, anchor = url, None
+        links.append(
+            ParsedLink(
+                raw=m.group(0),
+                target=target.strip(),
+                anchor=anchor.strip() if anchor else None,
+                kind="md",
+                pos=base + m.start(),
+            )
+        )
+    links.sort(key=lambda l: l.pos)
+    return links
 
 
 def _extract_tags(body: str) -> list[str]:
-    return []
+    masked = _mask_code(body)
+    seen: list[str] = []
+    for m in _TAG_RE.finditer(masked):
+        if m.group(1) not in seen:
+            seen.append(m.group(1))
+    return seen
