@@ -223,6 +223,36 @@ class GraphStore:
         visited.discard(node_id)
         return visited
 
+    def expand(
+        self,
+        seed_ids: list[str],
+        edge_types: list[EdgeType] | None = None,
+        hops: int = 1,
+    ) -> dict[str, int]:
+        """多源无向 BFS：一次建图，从所有种子一起扩 hops 跳。
+
+        返回 {node_id: 最小跳距}，不含种子自身，忽略不在图中的种子。
+        """
+        g = self.to_networkx()
+        allowed = {e.value for e in edge_types} if edge_types else None
+        frontier = {s for s in seed_ids if s in g}
+        visited = set(frontier)
+        dist: dict[str, int] = {}
+        for h in range(1, hops + 1):
+            nxt: set[str] = set()
+            for n in frontier:
+                for _, d, key in g.out_edges(n, keys=True):
+                    if (allowed is None or key in allowed) and d not in visited:
+                        nxt.add(d)
+                for s, _, key in g.in_edges(n, keys=True):
+                    if (allowed is None or key in allowed) and s not in visited:
+                        nxt.add(s)
+            for node in nxt:
+                dist[node] = h
+            visited |= nxt
+            frontier = nxt
+        return dist
+
     @contextmanager
     def transaction(self):
         """批量写：块内用 commit=False，退出时一次提交；异常回滚。"""
