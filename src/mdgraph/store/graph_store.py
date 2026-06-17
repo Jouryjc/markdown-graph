@@ -253,6 +253,32 @@ class GraphStore:
             frontier = nxt
         return dist
 
+    def subgraph(self, node_ids: list[str]) -> dict:
+        """给定节点 + 其 1 跳邻居的诱导子图（确定性排序）。"""
+        g = self.to_networkx()
+        keep: set[str] = {n for n in node_ids if n in g}
+        for n in list(keep):
+            for _, d, _ in g.out_edges(n, keys=True):
+                keep.add(d)
+            for s, _, _ in g.in_edges(n, keys=True):
+                keep.add(s)
+        nodes = sorted(
+            (
+                {"id": n, "type": g.nodes[n]["type"], "meta": g.nodes[n].get("meta", {})}
+                for n in keep
+            ),
+            key=lambda x: x["id"],
+        )
+        edges = sorted(
+            (
+                {"src": u, "dst": v, "type": key}
+                for u, v, key in g.edges(keys=True)
+                if u in keep and v in keep
+            ),
+            key=lambda e: (e["src"], e["dst"], e["type"]),
+        )
+        return {"nodes": nodes, "edges": edges}
+
     @contextmanager
     def transaction(self):
         """批量写：块内用 commit=False，退出时一次提交；异常回滚。"""
