@@ -73,3 +73,23 @@ def test_no_llm_no_entities(tmp_path):
     ent = [n for n, d in g.nodes(data=True) if d["type"] == NodeType.ENTITY.value]
     assert ent == []
     gs.close()
+
+
+def test_extract_skip_errored_doc_is_warned(tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    write(src, "good.md", "# G\n\nAlpha here\n")
+    write(src, "bad.md", "# B\n\nBeta there\n")
+    gs = GraphStore(tmp_path / "g.db")
+    idx = StructuralIndexer(gs, llm=MockLLMProvider())
+    orig = idx._build_doc
+
+    def maybe_fail(ctx, report):
+        if ctx.relpath == "bad.md":
+            raise RuntimeError("boom")
+        return orig(ctx, report)
+
+    monkeypatch.setattr(idx, "_build_doc", maybe_fail)
+    report = idx.index([src], root=src)
+    assert any("bad.md" in e[0] for e in report.errors)
+    assert any("bad.md" in w and "extraction" in w for w in report.warnings)
+    gs.close()

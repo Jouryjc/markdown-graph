@@ -246,11 +246,12 @@ class StructuralIndexer:
         vectors = embed_texts(self.embedder, texts)
         self.vector_store.add(chunk_ids, vectors, texts, metas)
 
-    def _extract_and_store(self, docs, report) -> None:
+    def _extract_and_store(self, docs: list["_DocCtx"], report: IndexReport) -> None:
         errored = {r[0] for r in report.errors}
         chunks: list[tuple[str, str]] = []
         for ctx in docs:
             if ctx.relpath in errored:
+                report.warnings.append(f"skipped extraction for errored doc: {ctx.relpath}")
                 continue
             for ch in ctx.chunks:
                 chunks.append((ch.id, ch.text))
