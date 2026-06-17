@@ -6,6 +6,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import networkx as nx
+
 from mdgraph.models import Chunk, Document, Edge, EdgeType, Node, NodeType
 
 SCHEMA = """
@@ -167,6 +169,53 @@ class GraphStore:
             node_ids + node_ids,
         )
         self.conn.commit()
+
+    def to_networkx(self) -> "nx.MultiDiGraph":
+        """从 SQLite 重建内存有向多重图用于遍历。"""
+        g = nx.MultiDiGraph()
+        for row in self.conn.execute("SELECT * FROM nodes").fetchall():
+            g.add_node(
+                row["id"],
+                type=row["type"],
+                doc_id=row["doc_id"],
+                meta=json.loads(row["meta_json"]),
+            )
+        for row in self.conn.execute("SELECT * FROM edges").fetchall():
+            g.add_edge(
+                row["src"],
+                row["dst"],
+                key=row["type"],
+                type=row["type"],
+                weight=row["weight"],
+            )
+        return g
+
+    def neighbors(
+        self,
+        node_id: str,
+        edge_types: list[EdgeType] | None = None,
+        hops: int = 1,
+    ) -> set[str]:
+        """无向扩展 node_id 的 hops 跳邻居（可按边类型过滤），不含自身。"""
+        g = self.to_networkx()
+        if node_id not in g:
+            return set()
+        allowed = {e.value for e in edge_types} if edge_types else None
+        visited = {node_id}
+        frontier = {node_id}
+        for _ in range(hops):
+            nxt: set[str] = set()
+            for n in frontier:
+                for _, dst, key in g.out_edges(n, keys=True):
+                    if (allowed is None or key in allowed) and dst not in visited:
+                        nxt.add(dst)
+                for src, _, key in g.in_edges(n, keys=True):
+                    if (allowed is None or key in allowed) and src not in visited:
+                        nxt.add(src)
+            visited |= nxt
+            frontier = nxt
+        visited.discard(node_id)
+        return visited
 
     def stats(self) -> dict[str, int]:
         return {
