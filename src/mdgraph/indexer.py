@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from posixpath import dirname, join, normpath
 
 from mdgraph.chunk import chunk_sections
 from mdgraph.ids import doc_id as make_doc_id, section_id, tag_id
@@ -79,6 +80,18 @@ class StructuralIndexer:
                 report.indexed += 1
             except Exception as exc:  # noqa: BLE001
                 report.errors.append((ctx.relpath, repr(exc)))
+
+        # Pass 3: resolve cross-document links (must be after all _build_doc so that
+        # delete_document inside _build_doc does not wipe freshly-created LINKS_TO edges)
+        for ctx in docs:
+            if any(r for r in report.errors if r[0] == ctx.relpath):
+                continue
+            try:
+                chunks_by_sec = self._make_chunks_by_sec(ctx)
+                self._build_links(ctx, chunks_by_sec, report)
+                self.store.conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append((ctx.relpath, repr(exc)))
         return report
 
     def _relpath(self, f: Path, root: Path | None) -> str:
@@ -131,7 +144,6 @@ class StructuralIndexer:
                 chunks_by_sec.setdefault(sidx, []).append(ch)
 
             self._build_tags(did, pd, chunks_by_sec)
-            self._build_links(ctx, chunks_by_sec, report)
 
     def _section_idx_for_pos(self, pd: ParsedDoc, pos: int) -> int:
         for sec in pd.sections:
@@ -157,6 +169,59 @@ class StructuralIndexer:
                 self.store.upsert_node(Node(id=tid, type=NodeType.TAG, meta={"name": tname}), commit=False)
                 self.store.upsert_edge(Edge(src=secs[0].id, dst=tid, type=EdgeType.TAGGED), commit=False)
 
+    def _make_chunks_by_sec(self, ctx: _DocCtx) -> dict[int, list[Chunk]]:
+        chunks_by_sec: dict[int, list[Chunk]] = {}
+        for ch in ctx.chunks:
+            sidx = self._section_idx_for_pos(ctx.pd, ch.char_start)
+            chunks_by_sec.setdefault(sidx, []).append(ch)
+        return chunks_by_sec
+
     def _build_links(self, ctx: _DocCtx, chunks_by_sec: dict[int, list[Chunk]], report: IndexReport) -> None:
-        # 链接在 Task 8 实现
-        return
+        for sec in ctx.pd.sections:
+            secs = chunks_by_sec.get(sec.sec_idx)
+            if not secs:
+                continue
+            for link in sec.links:
+                src = self._chunk_for_pos(secs, link.pos)
+                target = self._resolve_link(link, ctx.relpath, ctx.did)
+                if target is None:
+                    report.unresolved_links += 1
+                    node = self.store.get_node(src.id)
+                    meta = node.meta if node else {"section_path": src.section_path}
+                    meta.setdefault("unresolved_links", []).append(link.raw)
+                    self.store.upsert_node(
+                        Node(id=src.id, type=NodeType.CHUNK, doc_id=ctx.did, meta=meta), commit=False
+                    )
+                else:
+                    self.store.upsert_edge(
+                        Edge(src=src.id, dst=target, type=EdgeType.LINKS_TO), commit=False
+                    )
+
+    def _chunk_for_pos(self, chunks: list[Chunk], pos: int) -> Chunk:
+        for ch in chunks:
+            if ch.char_start <= pos < ch.char_end:
+                return ch
+        return chunks[0]
+
+    def _resolve_link(self, link, src_relpath: str, src_did: str) -> str | None:
+        if link.kind == "wiki":
+            tdid = src_did if not link.target else self.title_index.get(link.target.lower())
+        else:
+            tdid = src_did if not link.target else self._resolve_path(link.target, src_relpath)
+        if tdid is None:
+            return None
+        if link.anchor:
+            sidx = self._section_for_anchor(tdid, link.anchor)
+            if sidx is not None:
+                return section_id(tdid, sidx)
+            return tdid
+        return tdid
+
+    def _resolve_path(self, target: str, src_relpath: str) -> str | None:
+        cand = normpath(join(dirname(src_relpath), target))
+        if cand in self.path_index:
+            return self.path_index[cand]
+        return self.path_index.get(normpath(target))
+
+    def _section_for_anchor(self, tdid: str, anchor: str) -> int | None:
+        return self.slug_index.get(tdid, {}).get(_slug(anchor))
