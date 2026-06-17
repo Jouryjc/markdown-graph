@@ -61,6 +61,20 @@ def test_rebuild_is_idempotent(tmp_path):
     mg.close()
 
 
+def test_build_reconciles_removed_documents(tmp_path):
+    write(tmp_path, "a.md", "# A\n\na\n")
+    write(tmp_path, "b.md", "# B\n\nb\n")
+    mg = MarkdownGraph(tmp_path / ".mdgraph")
+    mg.build([tmp_path])
+    assert len(mg.graph_store.list_documents()) == 2
+    (tmp_path / "b.md").unlink()
+    report = mg.build([tmp_path])
+    ids = [i for i, _ in mg.graph_store.list_documents()]
+    assert ids == [doc_id("a.md")]
+    assert report.removed == 1
+    mg.close()
+
+
 def test_pass2_error_is_isolated_and_reported(tmp_path, monkeypatch):
     write(tmp_path, "good.md", "# G\n\nok\n")
     write(tmp_path, "bad.md", "# B\n\nboom\n")

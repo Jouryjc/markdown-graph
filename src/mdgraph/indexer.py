@@ -21,6 +21,7 @@ class IndexReport:
     skipped: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
     unresolved_links: int = 0
+    removed: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -73,6 +74,12 @@ class StructuralIndexer:
                 if sec.heading_path
             }
             docs.append(_DocCtx(relpath, did, doc, pd, chunks))
+
+        discovered = {ctx.did for ctx in docs}
+        for stored_id, _ in self.store.list_documents():
+            if stored_id not in discovered:
+                self.store.delete_document(stored_id)
+                report.removed += 1
 
         for ctx in docs:
             try:
