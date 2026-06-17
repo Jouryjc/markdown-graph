@@ -33,7 +33,8 @@ def test_search_returns_closest_first(tmp_path):
     results = store.search(query, k=3)
     assert results[0]["chunk_id"] == "c2"
     assert len(results) == 3
-    assert "score" in results[0]
+    assert "distance" in results[0]
+    assert "score" not in results[0]
     store.close()
 
 
