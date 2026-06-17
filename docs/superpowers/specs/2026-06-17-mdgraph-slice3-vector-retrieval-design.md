@@ -107,5 +107,14 @@ RetrievalResult {
 
 ## 10. 给切片 4/5 的接缝
 
-- 切片 4（Entity 抽取）：可复用 `embed_texts` 给 Entity 描述算向量；Entity 节点入图库。
+- 切片 4（Entity 抽取）：可复用 `embed_texts` 给 Entity 描述算向量；Entity 节点入图库。抽取可仿照 `_embed_and_store` 做成「结构之后的一道 post-pass」，沿用相同的 `report.errors` 跳过+`report.warnings` 告警语义。`LLMProvider`/`ExtractionResult`/`MockLLMProvider` 已在 `providers/`。
 - 切片 5（图扩展 + RRF）：`Retriever` 已是向量召回的落点，扩展为「向量召回 → 图扩展 → RRF」；`RetrievalResult.subgraph` 在此填充；`score`（越大越好）方向已对齐 RRF。
+
+## 11. 实现期发现 / 后续切片注意事项
+
+切片 3 实现完成后整体审查沉淀：
+
+- **purge-outside-txn 的 orphan-chunk 窗口**：`_build_doc` 在图事务**之前**调 `_purge_vectors(did)`（删旧向量）。若该文档的图事务随后回滚，旧 chunk 仍在图库、但其向量已删 → `vectors < chunks`，下次干净重建自愈。**切片 5 若加一致性/health 校验，须按「chunk→vector」方向 reconcile（给缺向量的图 chunk 补嵌入），不要只做 vector→chunk**。注意不一致来源有两个方向：errored-doc 跳过（chunk 有、vector 无，已告警）与此 rollback 窗口。
+- **embed batch_size 配置接缝**：`_embed_and_store` 用 `embed_texts(embedder, texts)` 走默认 `batch_size=64`；真实 provider 有每请求行/token 上限时，切片 4/5 应把 batch_size 从配置透传。
+- **`stats()["vectors"]` 条件键**：无 embedder 时无该键，调用方用 `.get("vectors")`；接入更多存储时考虑统一形状。
+- 已确认合理、不再 re-litigate 的 carry-forward：provider 注入（真实 Voyage/本地 provider 单独切片）、per-call `Retriever`、facade 无 `__enter__/__exit__`、`list_chunks_by_doc` 字典序、`VectorStore.delete` 字符串谓词（chunk_id 为 hex/下划线/数字、无引号、注入安全）。

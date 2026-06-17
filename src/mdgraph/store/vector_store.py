@@ -56,7 +56,12 @@ class VectorStore:
     def search(self, query_vector: list[float], k: int = 8) -> list[dict]:
         results = self.table.search(query_vector).limit(k).to_list()
         return [
-            {"chunk_id": r["chunk_id"], "text": r["text"], "score": r["_distance"], "meta": json.loads(r["meta_json"])}
+            {
+                "chunk_id": r["chunk_id"],
+                "text": r["text"],
+                "distance": r["_distance"],
+                "meta": json.loads(r["meta_json"]),
+            }
             for r in results
         ]
 
