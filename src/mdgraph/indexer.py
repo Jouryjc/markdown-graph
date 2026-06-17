@@ -8,6 +8,7 @@ from pathlib import Path
 from posixpath import dirname, join, normpath
 
 from mdgraph.chunk import chunk_sections
+from mdgraph.embed import embed_texts
 from mdgraph.ids import doc_id as make_doc_id, section_id, tag_id
 from mdgraph.ingest import discover, read_file
 from mdgraph.models import Chunk, Document, Edge, EdgeType, Node, NodeType
@@ -39,8 +40,10 @@ class _DocCtx:
 
 
 class StructuralIndexer:
-    def __init__(self, store: GraphStore) -> None:
+    def __init__(self, store: GraphStore, vector_store=None, embedder=None) -> None:
         self.store = store
+        self.vector_store = vector_store
+        self.embedder = embedder
 
     def index(self, paths, root=None, max_chars: int = 1200, overlap: int = 150) -> IndexReport:
         report = IndexReport()
@@ -78,6 +81,7 @@ class StructuralIndexer:
         discovered = {ctx.did for ctx in docs}
         for stored_id, _ in self.store.list_documents():
             if stored_id not in discovered:
+                self._purge_vectors(stored_id)
                 self.store.delete_document(stored_id)
                 report.removed += 1
 
@@ -99,6 +103,9 @@ class StructuralIndexer:
                     self._build_links(ctx, chunks_by_sec, report)
             except Exception as exc:  # noqa: BLE001
                 report.errors.append((ctx.relpath, repr(exc)))
+
+        if self.vector_store is not None and self.embedder is not None:
+            self._embed_and_store(docs, report)
         return report
 
     def _relpath(self, f: Path, root: Path | None) -> str:
@@ -111,6 +118,7 @@ class StructuralIndexer:
 
     def _build_doc(self, ctx: _DocCtx, report: IndexReport) -> None:
         did, pd, chunks = ctx.did, ctx.pd, ctx.chunks
+        self._purge_vectors(did)
         with self.store.transaction():
             self.store.delete_document(did, commit=False)
             self.store.upsert_document(ctx.doc, commit=False)
@@ -203,6 +211,32 @@ class StructuralIndexer:
                     self.store.upsert_edge(
                         Edge(src=src.id, dst=target, type=EdgeType.LINKS_TO), commit=False
                     )
+
+    def _purge_vectors(self, doc_id: str) -> None:
+        if self.vector_store is None:
+            return
+        ids = [c.id for c in self.store.list_chunks_by_doc(doc_id)]
+        if ids:
+            self.vector_store.delete(ids)
+
+    def _embed_and_store(self, docs, report) -> None:
+        errored = {r[0] for r in report.errors}
+        chunk_ids: list[str] = []
+        texts: list[str] = []
+        metas: list[dict] = []
+        for ctx in docs:
+            if ctx.relpath in errored:
+                continue
+            for ch in ctx.chunks:
+                chunk_ids.append(ch.id)
+                texts.append(ch.text)
+                metas.append(
+                    {"source_path": ctx.doc.path, "heading_path": ch.section_path}
+                )
+        if not chunk_ids:
+            return
+        vectors = embed_texts(self.embedder, texts)
+        self.vector_store.add(chunk_ids, vectors, texts, metas)
 
     def _chunk_for_pos(self, chunks: list[Chunk], pos: int) -> Chunk:
         for ch in chunks:
