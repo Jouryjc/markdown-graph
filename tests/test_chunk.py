@@ -38,3 +38,22 @@ def test_oversized_single_paragraph_hard_splits():
     pd = parse_document("a.md", f"# A\n\n{big}\n")
     chunks = chunk_sections(pd, max_chars=50, overlap=0)
     assert len(chunks) == 3  # 130-ish / 50
+
+
+import pytest
+
+from mdgraph.parse import parse_document as _pd
+
+
+def test_invalid_max_chars_raises():
+    pd = _pd("a.md", "# A\n\nbody\n")
+    with pytest.raises(ValueError):
+        chunk_sections(pd, max_chars=0)
+
+
+def test_overlap_must_be_less_than_max_chars():
+    pd = _pd("a.md", "# A\n\nbody\n")
+    with pytest.raises(ValueError):
+        chunk_sections(pd, max_chars=50, overlap=50)
+    with pytest.raises(ValueError):
+        chunk_sections(pd, max_chars=50, overlap=-1)

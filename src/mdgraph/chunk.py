@@ -10,6 +10,10 @@ from mdgraph.parse import ParsedDoc
 
 
 def chunk_sections(parsed: ParsedDoc, max_chars: int = 1200, overlap: int = 150) -> list[Chunk]:
+    if max_chars < 1:
+        raise ValueError("max_chars must be >= 1")
+    if overlap < 0 or overlap >= max_chars:
+        raise ValueError("overlap must satisfy 0 <= overlap < max_chars")
     did = _doc_id(parsed.relpath)
     out: list[Chunk] = []
     for sec in parsed.sections:
