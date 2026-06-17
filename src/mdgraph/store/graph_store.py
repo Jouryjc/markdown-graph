@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 import networkx as nx
@@ -59,7 +60,7 @@ class GraphStore:
         self.conn.close()
 
     # --- documents ---
-    def upsert_document(self, doc: Document) -> None:
+    def upsert_document(self, doc: Document, commit: bool = True) -> None:
         self.conn.execute(
             "INSERT INTO documents (id, path, hash, mtime, frontmatter_json) "
             "VALUES (?, ?, ?, ?, ?) "
@@ -67,7 +68,8 @@ class GraphStore:
             "mtime=excluded.mtime, frontmatter_json=excluded.frontmatter_json",
             (doc.id, doc.path, doc.hash, doc.mtime, json.dumps(doc.frontmatter)),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_document(self, doc_id: str) -> Document | None:
         row = self.conn.execute(
@@ -84,14 +86,15 @@ class GraphStore:
         )
 
     # --- nodes ---
-    def upsert_node(self, node: Node) -> None:
+    def upsert_node(self, node: Node, commit: bool = True) -> None:
         self.conn.execute(
             "INSERT INTO nodes (id, type, doc_id, meta_json) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET type=excluded.type, doc_id=excluded.doc_id, "
             "meta_json=excluded.meta_json",
             (node.id, node.type.value, node.doc_id, json.dumps(node.meta)),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_node(self, node_id: str) -> Node | None:
         row = self.conn.execute(
@@ -107,7 +110,7 @@ class GraphStore:
         )
 
     # --- edges ---
-    def upsert_edge(self, edge: Edge) -> None:
+    def upsert_edge(self, edge: Edge, commit: bool = True) -> None:
         self.conn.execute(
             "INSERT INTO edges (src, dst, type, weight, meta_json) "
             "VALUES (?, ?, ?, ?, ?) "
@@ -115,10 +118,11 @@ class GraphStore:
             "meta_json=excluded.meta_json",
             (edge.src, edge.dst, edge.type.value, edge.weight, json.dumps(edge.meta)),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     # --- chunks ---
-    def upsert_chunk(self, chunk: Chunk) -> None:
+    def upsert_chunk(self, chunk: Chunk, commit: bool = True) -> None:
         self.conn.execute(
             "INSERT INTO chunks (id, doc_id, section_path, text, char_start, char_end) "
             "VALUES (?, ?, ?, ?, ?, ?) "
@@ -134,7 +138,8 @@ class GraphStore:
                 chunk.char_end,
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_chunk(self, chunk_id: str) -> Chunk | None:
         row = self.conn.execute(
@@ -151,7 +156,7 @@ class GraphStore:
             char_end=row["char_end"],
         )
 
-    def delete_document(self, doc_id: str) -> None:
+    def delete_document(self, doc_id: str, commit: bool = True) -> None:
         """删除文档及其所有节点/块，并清理任何端点落在该文档节点集合上的边。"""
         node_ids = [
             row["id"]
@@ -168,7 +173,8 @@ class GraphStore:
             f"DELETE FROM edges WHERE src IN ({qmarks}) OR dst IN ({qmarks})",
             node_ids + node_ids,
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def to_networkx(self) -> "nx.MultiDiGraph":
         """从 SQLite 重建内存有向多重图用于遍历。"""
@@ -216,6 +222,38 @@ class GraphStore:
             frontier = nxt
         visited.discard(node_id)
         return visited
+
+    @contextmanager
+    def transaction(self):
+        """批量写：块内用 commit=False，退出时一次提交；异常回滚。"""
+        try:
+            yield
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def list_chunks_by_doc(self, doc_id: str) -> list[Chunk]:
+        rows = self.conn.execute(
+            "SELECT * FROM chunks WHERE doc_id = ? ORDER BY id", (doc_id,)
+        ).fetchall()
+        return [
+            Chunk(
+                id=r["id"],
+                doc_id=r["doc_id"],
+                section_path=r["section_path"],
+                text=r["text"],
+                char_start=r["char_start"],
+                char_end=r["char_end"],
+            )
+            for r in rows
+        ]
+
+    def list_documents(self) -> list[tuple[str, str]]:
+        rows = self.conn.execute(
+            "SELECT id, hash FROM documents ORDER BY id"
+        ).fetchall()
+        return [(r["id"], r["hash"]) for r in rows]
 
     def stats(self) -> dict[str, int]:
         return {

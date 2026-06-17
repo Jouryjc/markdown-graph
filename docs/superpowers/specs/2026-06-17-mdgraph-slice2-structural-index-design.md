@@ -141,3 +141,27 @@ ParsedLink {
 4. `parse.py`（frontmatter + 标题/section + 链接 + 标签）+ 测试（可能拆 2 个任务）。
 5. `chunk.py` + 测试。
 6. `indexer.py` 两遍法 + `MarkdownGraph.build/stats` 门面 + 集成测试。
+
+## 10. 实现期发现 / 后续切片注意事项
+
+切片 2 实现完成后沉淀（含实现期对计划的修正）：
+
+### 实现期对计划的修正（已在代码中）
+- **链接解析移到 Pass 3**：原计划在 `_build_doc` 事务内建 LINKS_TO；但后处理文档的 `delete_document(target)` 会删掉以其节点为端点的所有边（含早先文档指向它的 LINKS_TO）。改为所有 `_build_doc` 完成后再跑 Pass 3 统一连边，每文档独立事务。
+- **Pass-2/Pass-3 错误隔离**：单文档建图失败时记入 `report.errors` 并继续，不拖垮整批。
+- **删除 reconcile**：`build()` 在 discovery 后删除"不再被发现"的已存文档（`report.removed`），避免删文件后 rebuild 残留孤儿子树。
+- **chunk 参数校验**：`chunk_sections` 对 `max_chars<1` / 非法 `overlap` 抛 `ValueError`（防 `max_chars=0` 死循环）。
+
+### 切片 3（embedding + 向量检索）
+- **VectorStore 写入接缝已就绪**：`Chunk` 带 `text`/`char_start`/`char_end`/`section_path` 与无引号 `chunk_id`。切片 3 在 `_build_doc` 落 chunk 处（或事后遍历 `list_chunks_by_doc`）embed `chunk.text` 并写 `(chunk_id, vector)`。
+- **跨存储级联删除 + reconcile 合并实现**：`GraphStore.delete_document` 只清图库；切片 3 需让 indexer 在「删除/重建文档」与「reconcile 移除文档」两处都同时清除 VectorStore 对应向量。两者都围绕"按 doc 找到其 chunk_ids 跨库清除"。
+- **`stats()` 需扩展**：当前只报图库计数，接入 VectorStore 后补向量计数。
+- **`max_chars`/`overlap` 已贯通** `build → index → chunk_sections` 且已校验，embedding 尺寸可配置无需改 API。
+
+### 其它（已知、可接受、记录在案）
+- `ingest.discover` 跨多根目录是按输入序拼接（每目录内有序），非全局排序；单根 build 不受影响。
+- `.md` 后缀大小写敏感（漏 `.MD`/`.markdown`）。
+- 行内 tag 归属到 section 首个 chunk（非按 pos 精确归属）。
+- `list_chunks_by_doc` 的 `ORDER BY id` 为字典序（`_c10` < `_c2`）。
+- `MarkdownGraph` 未实现 `__enter__/__exit__`，`build()` 异常时不自动 `close()`（库门面可接受）。
+- parse 的两套代码屏蔽策略（`_split_sections` 行扫描 fence vs `_mask_code` 正则）在未闭合 fence 等边角可能不一致，但各自局部正确。
