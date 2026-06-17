@@ -59,3 +59,21 @@ def test_rebuild_is_idempotent(tmp_path):
     s2 = mg.stats()
     assert s1 == s2
     mg.close()
+
+
+def test_pass2_error_is_isolated_and_reported(tmp_path, monkeypatch):
+    write(tmp_path, "good.md", "# G\n\nok\n")
+    write(tmp_path, "bad.md", "# B\n\nboom\n")
+    mg = MarkdownGraph(tmp_path / ".mdgraph")
+    orig = mg.indexer._build_doc
+
+    def maybe_fail(ctx, report):
+        if ctx.relpath == "bad.md":
+            raise RuntimeError("boom")
+        return orig(ctx, report)
+
+    monkeypatch.setattr(mg.indexer, "_build_doc", maybe_fail)
+    report = mg.build([tmp_path])
+    assert report.indexed == 1
+    assert any("bad.md" in e[0] for e in report.errors)
+    mg.close()

@@ -74,8 +74,11 @@ class StructuralIndexer:
             docs.append(_DocCtx(relpath, did, doc, pd, chunks))
 
         for ctx in docs:
-            self._build_doc(ctx, report)
-            report.indexed += 1
+            try:
+                self._build_doc(ctx, report)
+                report.indexed += 1
+            except Exception as exc:  # noqa: BLE001
+                report.errors.append((ctx.relpath, repr(exc)))
         return report
 
     def _relpath(self, f: Path, root: Path | None) -> str:
