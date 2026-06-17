@@ -64,3 +64,25 @@ def test_reopen_keeps_data(tmp_path):
     s2 = VectorStore(tmp_path / "vectors", model_name="mock-embed", dim=16)
     assert s2.count() == 1
     s2.close()
+
+
+def test_add_with_meta_roundtrips_in_search(tmp_path):
+    store = make_store(tmp_path)
+    emb = DeterministicEmbeddingProvider(dim=16)
+    texts = ["alpha", "beta"]
+    metas = [{"source_path": "/a.md", "heading_path": "H1"}, {"source_path": "/b.md"}]
+    store.add(["c1", "c2"], emb.embed(texts), texts, metas)
+    results = store.search(emb.embed(["alpha"])[0], k=2)
+    top = results[0]
+    assert top["chunk_id"] == "c1"
+    assert top["meta"] == {"source_path": "/a.md", "heading_path": "H1"}
+    store.close()
+
+
+def test_add_without_meta_defaults_to_empty_dict(tmp_path):
+    store = make_store(tmp_path)
+    emb = DeterministicEmbeddingProvider(dim=16)
+    store.add(["c1"], emb.embed(["alpha"]), ["alpha"])
+    results = store.search(emb.embed(["alpha"])[0], k=1)
+    assert results[0]["meta"] == {}
+    store.close()

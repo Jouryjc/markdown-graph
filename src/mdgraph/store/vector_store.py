@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -26,6 +27,7 @@ class VectorStore:
                     pa.field("chunk_id", pa.string()),
                     pa.field("vector", pa.list_(pa.float32(), dim)),
                     pa.field("text", pa.string()),
+                    pa.field("meta_json", pa.string()),
                 ]
             )
             self.table = self.db.create_table(self.table_name, schema=schema)
@@ -40,10 +42,13 @@ class VectorStore:
         chunk_ids: list[str],
         vectors: list[list[float]],
         texts: list[str],
+        metas: list[dict] | None = None,
     ) -> None:
+        if metas is None:
+            metas = [{} for _ in chunk_ids]
         rows = [
-            {"chunk_id": cid, "vector": vec, "text": txt}
-            for cid, vec, txt in zip(chunk_ids, vectors, texts)
+            {"chunk_id": cid, "vector": vec, "text": txt, "meta_json": json.dumps(meta)}
+            for cid, vec, txt, meta in zip(chunk_ids, vectors, texts, metas)
         ]
         if rows:
             self.table.add(rows)
@@ -51,7 +56,7 @@ class VectorStore:
     def search(self, query_vector: list[float], k: int = 8) -> list[dict]:
         results = self.table.search(query_vector).limit(k).to_list()
         return [
-            {"chunk_id": r["chunk_id"], "text": r["text"], "score": r["_distance"]}
+            {"chunk_id": r["chunk_id"], "text": r["text"], "score": r["_distance"], "meta": json.loads(r["meta_json"])}
             for r in results
         ]
 
