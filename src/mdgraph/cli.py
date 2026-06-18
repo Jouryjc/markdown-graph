@@ -87,6 +87,54 @@ def query(
         mg.close()
 
 
+@app.command()
+def stats(
+    store: Path = typer.Option(Path(".mdgraph"), "--store"),
+    embedder: Optional[str] = typer.Option(None, "--embedder", help="pkg.mod:attr"),
+) -> None:
+    emb = _load(embedder) if embedder else None
+    mg = MarkdownGraph(store, embedder=emb)
+    try:
+        for key, value in mg.stats().items():
+            typer.echo(f"{key}: {value}")
+    finally:
+        mg.close()
+
+
+graph_app = typer.Typer(help="图谱导出 / 检查")
+app.add_typer(graph_app, name="graph")
+
+
+@graph_app.command("export")
+def graph_export(
+    store: Path = typer.Option(Path(".mdgraph"), "--store"),
+    seeds: Optional[str] = typer.Option(None, "--seeds", help="逗号分隔的种子节点 id"),
+    hops: int = typer.Option(2, "--hops"),
+    output: Optional[Path] = typer.Option(None, "-o", "--output", help="写入文件"),
+) -> None:
+    import json as _json
+
+    mg = MarkdownGraph(store)
+    try:
+        gs = mg.graph_store
+        if seeds:
+            seed_ids = [s.strip() for s in seeds.split(",") if s.strip()]
+            dist = gs.expand(seed_ids, hops=hops)
+            data = gs.subgraph(seed_ids + list(dist))
+        else:
+            data = gs.export_graph()
+        text = _json.dumps(data, ensure_ascii=False, indent=2)
+        if output:
+            output.write_text(text, encoding="utf-8")
+            typer.echo(
+                f"wrote {len(data['nodes'])} nodes, {len(data['edges'])} edges to {output}"
+            )
+        else:
+            typer.echo(text)
+    finally:
+        mg.close()
+
+
 def main() -> None:
     app()
 
