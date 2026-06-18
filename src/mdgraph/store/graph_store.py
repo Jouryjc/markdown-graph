@@ -197,6 +197,58 @@ class GraphStore:
         if commit:
             self.conn.commit()
 
+    def reclaim_orphans(self) -> int:
+        """删除无 MENTIONS 入边的 ENTITY 与无 TAGGED 入边的 TAG，连带清除以它们
+        为端点的所有边（含悬挂 RELATES_TO）。返回删除的节点数。幂等。"""
+        orphans = [
+            row["id"]
+            for row in self.conn.execute(
+                "SELECT id FROM nodes WHERE type = ? "
+                "AND id NOT IN (SELECT dst FROM edges WHERE type = ?)",
+                (NodeType.ENTITY.value, EdgeType.MENTIONS.value),
+            ).fetchall()
+        ]
+        orphans += [
+            row["id"]
+            for row in self.conn.execute(
+                "SELECT id FROM nodes WHERE type = ? "
+                "AND id NOT IN (SELECT dst FROM edges WHERE type = ?)",
+                (NodeType.TAG.value, EdgeType.TAGGED.value),
+            ).fetchall()
+        ]
+        if not orphans:
+            return 0
+        qmarks = ",".join("?" * len(orphans))
+        self.conn.execute(f"DELETE FROM nodes WHERE id IN ({qmarks})", orphans)
+        self.conn.execute(
+            f"DELETE FROM edges WHERE src IN ({qmarks}) OR dst IN ({qmarks})",
+            orphans + orphans,
+        )
+        self.conn.commit()
+        return len(orphans)
+
+    def export_graph(self) -> dict:
+        """全图导出：{"nodes": [{id,type,meta}], "edges": [{src,dst,type}]}，确定性排序。"""
+        nodes = sorted(
+            (
+                {
+                    "id": r["id"],
+                    "type": r["type"],
+                    "meta": json.loads(r["meta_json"]),
+                }
+                for r in self.conn.execute("SELECT * FROM nodes").fetchall()
+            ),
+            key=lambda x: x["id"],
+        )
+        edges = sorted(
+            (
+                {"src": r["src"], "dst": r["dst"], "type": r["type"]}
+                for r in self.conn.execute("SELECT * FROM edges").fetchall()
+            ),
+            key=lambda e: (e["src"], e["dst"], e["type"]),
+        )
+        return {"nodes": nodes, "edges": edges}
+
     def to_networkx(self) -> "nx.MultiDiGraph":
         """从 SQLite 重建内存有向多重图用于遍历。"""
         g = nx.MultiDiGraph()
