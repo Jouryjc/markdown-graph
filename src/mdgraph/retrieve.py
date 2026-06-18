@@ -19,6 +19,12 @@ _EXPAND_EDGES = [
 
 
 class Context(BaseModel):
+    """一条检索命中。
+
+    score 在 dual（图+向量）模式下是 RRF 融合值，在纯向量模式下是
+    1/(1+距离) 相似度——同字段不同量纲，二者都「越大越相关」，仅用于排序。
+    """
+
     chunk_id: str
     text: str
     score: float
@@ -69,15 +75,36 @@ class Retriever:
         vector_ranking = [r["chunk_id"] for r in rows]
         row_by_id = {r["chunk_id"]: r for r in rows}
         dist = self.graph_store.expand(vector_ranking, edge_types=_EXPAND_EDGES, hops=hops)
-        graph_chunks = [n for n in dist if self.graph_store.get_chunk(n) is not None]
+        chunk_map = self.graph_store.get_chunks(list(dist))  # 一次批量取，消 N+1
+        graph_chunks = [n for n in dist if n in chunk_map]
         graph_ranking = sorted(graph_chunks, key=lambda n: (dist[n], n))
         fused = reciprocal_rank_fusion([vector_ranking, graph_ranking])
         ordered = sorted(fused, key=lambda c: (-fused[c], c))[:k]
-        contexts = [self._context(cid, fused[cid], row_by_id) for cid in ordered]
+        # 图独有命中块的 source_path：按 doc_id 去重后批量取 document
+        doc_ids = {
+            chunk_map[cid].doc_id
+            for cid in ordered
+            if cid not in row_by_id and cid in chunk_map
+        }
+        doc_paths: dict[str, str] = {}
+        for did in doc_ids:
+            doc = self.graph_store.get_document(did)
+            doc_paths[did] = doc.path if doc is not None else ""
+        contexts = [
+            self._context(cid, fused[cid], row_by_id, chunk_map, doc_paths)
+            for cid in ordered
+        ]
         subgraph = self.graph_store.subgraph(ordered)
         return RetrievalResult(contexts=contexts, subgraph=subgraph)
 
-    def _context(self, chunk_id: str, score: float, row_by_id: dict) -> Context:
+    def _context(
+        self,
+        chunk_id: str,
+        score: float,
+        row_by_id: dict,
+        chunk_map: dict,
+        doc_paths: dict,
+    ) -> Context:
         if chunk_id in row_by_id:
             r = row_by_id[chunk_id]
             return Context(
@@ -87,15 +114,13 @@ class Retriever:
                 source_path=r["meta"].get("source_path", ""),
                 heading_path=r["meta"].get("heading_path", ""),
             )
-        ch = self.graph_store.get_chunk(chunk_id)
-        source = ""
-        if ch is not None:
-            doc = self.graph_store.get_document(ch.doc_id)
-            source = doc.path if doc is not None else ""
+        ch = chunk_map.get(chunk_id)
+        if ch is None:
+            return Context(chunk_id=chunk_id, text="", score=score)
         return Context(
             chunk_id=chunk_id,
-            text=ch.text if ch is not None else "",
+            text=ch.text,
             score=score,
-            source_path=source,
-            heading_path=ch.section_path if ch is not None else "",
+            source_path=doc_paths.get(ch.doc_id, ""),
+            heading_path=ch.section_path,
         )

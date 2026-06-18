@@ -156,6 +156,27 @@ class GraphStore:
             char_end=row["char_end"],
         )
 
+    def get_chunks(self, ids: list[str]) -> dict[str, Chunk]:
+        """批量取块，返回 {id: Chunk}；缺失 id 不在结果中，空 ids 返回空 dict。"""
+        ids = list(ids)
+        if not ids:
+            return {}
+        qmarks = ",".join("?" * len(ids))
+        rows = self.conn.execute(
+            f"SELECT * FROM chunks WHERE id IN ({qmarks})", ids
+        ).fetchall()
+        return {
+            r["id"]: Chunk(
+                id=r["id"],
+                doc_id=r["doc_id"],
+                section_path=r["section_path"],
+                text=r["text"],
+                char_start=r["char_start"],
+                char_end=r["char_end"],
+            )
+            for r in rows
+        }
+
     def delete_document(self, doc_id: str, commit: bool = True) -> None:
         """删除文档及其所有节点/块，并清理任何端点落在该文档节点集合上的边。"""
         node_ids = [
