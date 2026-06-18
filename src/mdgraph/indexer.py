@@ -101,7 +101,7 @@ class StructuralIndexer:
 
         # reconcile：用全部 discovered（unchanged 不算 removed）
         discovered = {ctx.did for ctx in docs}
-        for stored_id, _ in self.store.list_documents():
+        for stored_id, _ in stored.items():
             if stored_id not in discovered:
                 self._purge_vectors(stored_id)
                 self.store.delete_document(stored_id)
