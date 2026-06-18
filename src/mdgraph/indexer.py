@@ -25,6 +25,8 @@ class IndexReport:
     unresolved_links: int = 0
     removed: int = 0
     entities: int = 0
+    unchanged: int = 0
+    reclaimed: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -48,7 +50,14 @@ class StructuralIndexer:
         self.embedder = embedder
         self.llm = llm
 
-    def index(self, paths, root=None, max_chars: int = 1200, overlap: int = 150) -> IndexReport:
+    def index(
+        self,
+        paths,
+        root=None,
+        max_chars: int = 1200,
+        overlap: int = 150,
+        incremental: bool = True,
+    ) -> IndexReport:
         report = IndexReport()
         root_path = Path(root).resolve() if root else None
         docs: list[_DocCtx] = []
@@ -81,23 +90,32 @@ class StructuralIndexer:
             }
             docs.append(_DocCtx(relpath, did, doc, pd, chunks))
 
+        # 按 content-hash 分流：unchanged 跳过，built = new/changed（全量模式下全部）
+        stored = dict(self.store.list_documents())
+        built: list[_DocCtx] = []
+        for ctx in docs:
+            if incremental and stored.get(ctx.did) == ctx.doc.hash:
+                report.unchanged += 1
+            else:
+                built.append(ctx)
+
+        # reconcile：用全部 discovered（unchanged 不算 removed）
         discovered = {ctx.did for ctx in docs}
-        for stored_id, _ in self.store.list_documents():
+        for stored_id, _ in stored.items():
             if stored_id not in discovered:
                 self._purge_vectors(stored_id)
                 self.store.delete_document(stored_id)
                 report.removed += 1
 
-        for ctx in docs:
+        for ctx in built:
             try:
                 self._build_doc(ctx, report)
                 report.indexed += 1
             except Exception as exc:  # noqa: BLE001
                 report.errors.append((ctx.relpath, repr(exc)))
 
-        # Pass 3: resolve cross-document links (must be after all _build_doc so that
-        # delete_document inside _build_doc does not wipe freshly-created LINKS_TO edges)
-        for ctx in docs:
+        # Pass 3: 仅对 built 解析跨文档链接（unchanged doc 的链接原样保留）
+        for ctx in built:
             if any(r for r in report.errors if r[0] == ctx.relpath):
                 continue
             try:
@@ -108,9 +126,12 @@ class StructuralIndexer:
                 report.errors.append((ctx.relpath, repr(exc)))
 
         if self.vector_store is not None and self.embedder is not None:
-            self._embed_and_store(docs, report)
+            self._embed_and_store(built, report)
         if self.llm is not None:
-            self._extract_and_store(docs, report)
+            self._extract_and_store(built, report)
+
+        # 孤儿回收：在 reconcile + build + extract 之后，确保不误删待重建的实体
+        report.reclaimed = self.store.reclaim_orphans()
         return report
 
     def _relpath(self, f: Path, root: Path | None) -> str:

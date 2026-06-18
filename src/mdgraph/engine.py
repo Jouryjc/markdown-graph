@@ -32,11 +32,20 @@ class MarkdownGraph:
             self.graph_store, vector_store=self.vector_store, embedder=embedder, llm=llm
         )
 
-    def build(self, paths, root=None, max_chars: int = 1200, overlap: int = 150) -> IndexReport:
+    def build(
+        self,
+        paths,
+        root=None,
+        max_chars: int = 1200,
+        overlap: int = 150,
+        incremental: bool = True,
+    ) -> IndexReport:
         paths = [Path(p) for p in paths]
         if root is None and len(paths) == 1 and paths[0].is_dir():
             root = paths[0]
-        return self.indexer.index(paths, root=root, max_chars=max_chars, overlap=overlap)
+        return self.indexer.index(
+            paths, root=root, max_chars=max_chars, overlap=overlap, incremental=incremental
+        )
 
     def retrieve(self, query: str, k: int = 8) -> RetrievalResult:
         if self.embedder is None or self.vector_store is None:
