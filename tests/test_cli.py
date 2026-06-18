@@ -58,3 +58,4 @@ def test_bad_dotted_path_errors(tmp_path):
         ["index", str(src), "--store", str(tmp_path / "s"), "--embedder", "no.such:Thing"],
     )
     assert r.exit_code != 0
+    assert "无法加载" in r.output

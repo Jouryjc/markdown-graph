@@ -45,17 +45,19 @@ def index(
     emb = _load(embedder) if embedder else None
     llm_obj = _load(llm) if llm else None
     mg = MarkdownGraph(store, embedder=emb, llm=llm_obj)
-    report = mg.build(
-        paths, incremental=not full, max_chars=max_chars, overlap=overlap
-    )
-    typer.echo(
-        f"indexed={report.indexed} unchanged={report.unchanged} "
-        f"removed={report.removed} reclaimed={report.reclaimed} "
-        f"entities={report.entities} errors={len(report.errors)}"
-    )
-    for path, err in report.errors:
-        typer.echo(f"  error: {path}: {err}", err=True)
-    mg.close()
+    try:
+        report = mg.build(
+            paths, incremental=not full, max_chars=max_chars, overlap=overlap
+        )
+        typer.echo(
+            f"indexed={report.indexed} unchanged={report.unchanged} "
+            f"removed={report.removed} reclaimed={report.reclaimed} "
+            f"entities={report.entities} errors={len(report.errors)}"
+        )
+        for path, err in report.errors:
+            typer.echo(f"  error: {path}: {err}", err=True)
+    finally:
+        mg.close()
 
 
 @app.command()
@@ -73,14 +75,16 @@ def query(
         raise typer.Exit(code=1)
     emb = _load(embedder)
     mg = MarkdownGraph(store, embedder=emb)
-    res = mg.retrieve(text, k=k)
-    if json_out:
-        typer.echo(res.model_dump_json(indent=2))
-    else:
-        for c in res.contexts:
-            typer.echo(f"[{c.score:.4f}] {c.source_path} :: {c.heading_path}")
-            typer.echo(f"    {c.text[:200].replace(chr(10), ' ')}")
-    mg.close()
+    try:
+        res = mg.retrieve(text, k=k)
+        if json_out:
+            typer.echo(res.model_dump_json(indent=2))
+        else:
+            for c in res.contexts:
+                typer.echo(f"[{c.score:.4f}] {c.source_path} :: {c.heading_path}")
+                typer.echo(f"    {c.text[:200].replace(chr(10), ' ')}")
+    finally:
+        mg.close()
 
 
 def main() -> None:
