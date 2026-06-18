@@ -61,6 +61,7 @@
 
 - unchanged doc 链接到的目标这次才新增/消失，**不会**更新该 unchanged doc 的链接解析状态，直到该 doc 自身变更——标准增量 dirty-set 取舍。需要修正时用 `--full` 全量重建。
 - unchanged doc 的向量/实体原样保留（这正是增量收益）：embedder/llm 配置或模型版本变更后，对未变文件需 `--full` 才会重嵌/重抽。
+- 跨文档共享的 Entity 的 meta（type/description/aliases）按「当前重建批次」聚合：若某实体的富 meta 来自一个**未变更**文档，而本次只重建了另一个裸提及它的文档，增量重抽取会把该实体 meta 覆盖为裸值（MENTIONS 边不受影响，检索仍能命中该实体）。这与上文 staleness 同属 dirty-set 取舍——`--full` 全量重建可恢复。正确的增量实体 meta 重聚合需要 per-doc 来源追踪，留给后续「真实 LLM provider」切片（mock provider 下实体 meta 恒为空，无可见影响）。
 
 ## 5. 孤儿回收谓词（`reclaim_orphans`）
 
