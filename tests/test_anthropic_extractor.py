@@ -48,10 +48,28 @@ def test_parses_tool_use_into_extraction_result():
     assert (res.relations[0].source, res.relations[0].target, res.relations[0].type) == (
         "RAG", "Embedding", "依赖",
     )
+    sent = ext._client.messages.kwargs
+    assert sent["tool_choice"] == {"type": "tool", "name": "record_extraction"}
+    assert sent["model"] == "claude-sonnet-4-6"
+    assert sent["tools"][0]["name"] == "record_extraction"
 
 
 def test_api_error_degrades_to_empty():
     ext = ClaudeExtractor(client=_FakeClient(exc=RuntimeError("boom")))
+    res = ext.extract("anything")
+    assert res.entities == [] and res.relations == []
+
+
+def test_no_tool_use_block_degrades_to_empty():
+    class _TextBlock:
+        def __init__(self):
+            self.type = "text"
+
+    class _RespNoTool:
+        def __init__(self):
+            self.content = [_TextBlock()]
+
+    ext = ClaudeExtractor(client=_FakeClient(resp=_RespNoTool()))
     res = ext.extract("anything")
     assert res.entities == [] and res.relations == []
 
