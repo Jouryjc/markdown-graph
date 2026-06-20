@@ -40,6 +40,7 @@ def test_compare_retrieval_flags_graph_added(tmp_path):
     )
     assert rows[0]["query"] == "alpha"
     assert set(rows[0]["dual"]) >= set(rows[0]["vector_only"])  # 双引擎是超集或并集
+    assert rows[0]["graph_added"] == [c for c in rows[0]["dual"] if c not in rows[0]["vector_only"]]
     mg.close()
 
 

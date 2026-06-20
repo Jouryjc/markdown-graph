@@ -87,8 +87,9 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"embedding 模型加载失败（需联网下载一次）：{exc}", file=sys.stderr)
         return 1
-    mg = MarkdownGraph(STORE, embedder=embedder, llm=ClaudeExtractor())
+    mg = None
     try:
+        mg = MarkdownGraph(STORE, embedder=embedder, llm=ClaudeExtractor())
         report = mg.build([CORPUS], incremental=False)
         print(
             f"indexed={report.indexed} entities={report.entities} "
@@ -118,7 +119,8 @@ def main() -> int:
         for name, cnt in top_mentioned_entities(mg.graph_store, top=10):
             print(f"  {name}: {cnt}")
     finally:
-        mg.close()
+        if mg is not None:
+            mg.close()
     return 0
 
 
