@@ -17,6 +17,23 @@
    ```
    若用官方直连：改填 `ANTHROPIC_API_KEY`，上面两项留空。
 
+## 本地 LLM 实体层（推荐，零外部 key）
+
+默认用本地 Ollama 做实体抽取，无需任何外部凭证：
+
+```bash
+pip install fastembed openai          # 本地依赖
+ollama serve &                        # 启动 Ollama（若未运行）
+ollama pull qwen2.5:3b                # 拉中文模型（约 2GB，仅首次）
+MDGRAPH_LLM=local PYTHONPATH=src python examples/run_demo.py
+```
+
+可经环境变量覆盖：`MDGRAPH_LLM_BASE_URL`（默认 `http://localhost:11434/v1`）、
+`MDGRAPH_LLM_MODEL`（默认 `qwen2.5:3b`）、`MDGRAPH_LLM_API_KEY`（默认 `ollama`）。
+任何 OpenAI 兼容端点（LM Studio、vLLM、llama.cpp server）都可用，改 `MDGRAPH_LLM_BASE_URL` 即可。
+
+用 Anthropic Claude（需凭证）则设 `MDGRAPH_LLM=claude` 并在 `.env` 填 Anthropic 凭证。
+
 ## 运行
 
 ```bash

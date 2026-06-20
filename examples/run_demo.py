@@ -69,19 +69,37 @@ def top_mentioned_entities(graph_store, top: int = 10) -> list[tuple[str, int]]:
     return counts[:top]
 
 
+def _make_llm():
+    """按 env MDGRAPH_LLM 选择 LLM provider：默认本地（Ollama），可选 claude。"""
+    choice = os.environ.get("MDGRAPH_LLM", "local")
+    if choice == "claude":
+        if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
+            raise RuntimeError(
+                "MDGRAPH_LLM=claude 需要 .env 配 ANTHROPIC_AUTH_TOKEN(+ANTHROPIC_BASE_URL) 或 ANTHROPIC_API_KEY"
+            )
+        from mdgraph.providers.anthropic_extractor import ClaudeExtractor
+
+        return ClaudeExtractor()
+    from mdgraph.providers.local_llm_extractor import LocalLLMExtractor
+
+    return LocalLLMExtractor()
+
+
 def main() -> int:
     load_env(ROOT / ".env")
-    if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
-        print("缺少凭证：请在项目根 .env 填写 ANTHROPIC_AUTH_TOKEN(+ANTHROPIC_BASE_URL) 或 ANTHROPIC_API_KEY", file=sys.stderr)
+    try:
+        from mdgraph.providers.fastembed_embedder import FastEmbedProvider  # noqa: F401
+    except ImportError as exc:
+        print(f"缺少依赖：{exc}（请 `pip install fastembed openai`）", file=sys.stderr)
         return 1
     try:
-        from mdgraph.providers.fastembed_embedder import FastEmbedProvider
-        from mdgraph.providers.anthropic_extractor import ClaudeExtractor
-    except ImportError as exc:
-        print(f"缺少依赖：{exc}（请 `pip install fastembed`）", file=sys.stderr)
+        llm = _make_llm()
+    except Exception as exc:  # noqa: BLE001
+        print(f"LLM provider 初始化失败：{exc}", file=sys.stderr)
         return 1
 
-    print("== 构建图谱（首次会下载 embedding 模型 + 调用 Claude 抽取，请稍候）==")
+    mode = os.environ.get("MDGRAPH_LLM", "local")
+    print(f"== 构建图谱（embedder=fastembed，llm={mode}；首次会下载 embedding 模型，请稍候）==")
     try:
         embedder = FastEmbedProvider()
     except Exception as exc:  # noqa: BLE001
@@ -89,7 +107,7 @@ def main() -> int:
         return 1
     mg = None
     try:
-        mg = MarkdownGraph(STORE, embedder=embedder, llm=ClaudeExtractor())
+        mg = MarkdownGraph(STORE, embedder=embedder, llm=llm)
         report = mg.build([CORPUS], incremental=False)
         print(
             f"indexed={report.indexed} entities={report.entities} "

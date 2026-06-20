@@ -52,3 +52,28 @@ def test_top_mentioned_entities(tmp_path):
     top = run_demo.top_mentioned_entities(mg.graph_store, top=10)
     assert any(name == "Alpha" and cnt >= 2 for name, cnt in top)
     mg.close()
+
+
+def test_make_llm_defaults_to_local(monkeypatch):
+    monkeypatch.delenv("MDGRAPH_LLM", raising=False)
+    from mdgraph.providers.local_llm_extractor import LocalLLMExtractor
+    llm = run_demo._make_llm()
+    assert isinstance(llm, LocalLLMExtractor)
+
+
+def test_make_llm_claude_when_selected(monkeypatch):
+    monkeypatch.setenv("MDGRAPH_LLM", "claude")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    from mdgraph.providers.anthropic_extractor import ClaudeExtractor
+    llm = run_demo._make_llm()
+    assert isinstance(llm, ClaudeExtractor)
+
+
+def test_make_llm_claude_missing_creds_raises(monkeypatch):
+    monkeypatch.setenv("MDGRAPH_LLM", "claude")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    import pytest
+    with pytest.raises(RuntimeError):
+        run_demo._make_llm()
