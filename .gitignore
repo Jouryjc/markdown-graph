@@ -7,3 +7,4 @@ venv/
 .pytest_cache/
 .env
 .fastembed_cache/
+examples/.demo_store/
