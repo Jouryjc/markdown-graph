@@ -10,9 +10,9 @@ Claude 是 Anthropic 研发的大语言模型系列，以宪法 AI（Constitutio
 
 ## 主要版本
 
-- **Claude 3.5 Sonnet**：速度与智能的平衡点，适合大多数生产场景
-- **Claude 3 Opus**：最强推理能力，适合复杂 [[planning]] 任务
-- **Claude 3 Haiku**：轻量快速，适合高并发、低延迟场景
+- **Claude Opus 4.8**：最强推理能力，适合复杂 [[planning]] 任务
+- **Claude Sonnet 4.6**：速度与智能的平衡点，适合大多数生产场景
+- **Claude Haiku 4.5**：轻量快速，适合高并发、低延迟场景
 
 ## 核心能力
 
