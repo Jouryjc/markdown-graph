@@ -8,3 +8,8 @@ venv/
 .env
 .fastembed_cache/
 examples/.demo_store/
+
+# webapp
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+webapp/backend/__pycache__/
