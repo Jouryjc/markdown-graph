@@ -111,10 +111,15 @@ def get_engine() -> MarkdownGraph:
 
     Always returns a usable engine for graph/store reads. Embedder-dependent
     operations should call :func:`require_embedder` first.
+
+    The read of ``_engine`` is taken under ``_lock`` so it cannot observe a
+    half-swapped singleton during :func:`reset_engine` / :func:`set_engine`.
+    Once a caller has the returned reference, the underlying sqlite connection
+    stays valid for the life of that reference: reconfiguration swaps in a new
+    engine and lets the old one be closed by GC, never closing a connection out
+    from under an in-flight reader.
     """
     global _engine
-    if _engine is not None:
-        return _engine
     with _lock:
         if _engine is not None:
             return _engine
@@ -140,21 +145,35 @@ def require_embedder() -> MarkdownGraph:
 
 
 def set_engine(engine: MarkdownGraph | None) -> None:
-    """Override the singleton — used by tests to point at a tmp store."""
+    """Override the singleton — used by tests to point at a tmp store.
+
+    Swaps atomically under ``_lock`` and does NOT synchronously close the
+    previous engine: any reader that already holds a reference to it keeps a
+    valid sqlite connection until it finishes, and the orphaned engine is closed
+    by GC. This avoids the use-after-close race described in the module / build
+    flow.
+    """
     global _engine, _embedder_error
     if engine is not None:
         _make_thread_safe(engine)
-    _engine = engine
-    _embedder_error = None
+    with _lock:
+        _engine = engine
+        _embedder_error = None
 
 
 def reset_engine() -> None:
-    """Close and clear the singleton (test teardown / reconfiguration)."""
+    """Clear the singleton so the next :func:`get_engine` rebuilds it.
+
+    Used on build success (to reopen against freshly written data) and in test
+    teardown. We deliberately DO NOT close the outgoing engine here: a reader
+    (stats / graph / query / documents / entities) may have captured the
+    reference just before this runs and still be mid-query. Closing its sqlite
+    connection synchronously would raise ``sqlite3.ProgrammingError: Cannot
+    operate on a closed database`` under that reader. Instead we drop the
+    reference under ``_lock`` and let the garbage collector close the connection
+    once no reader holds it — a swap-then-defer that degrades gracefully.
+    """
     global _engine, _embedder_error
-    if _engine is not None:
-        try:
-            _engine.close()
-        except Exception:
-            pass
-    _engine = None
-    _embedder_error = None
+    with _lock:
+        _engine = None
+        _embedder_error = None
