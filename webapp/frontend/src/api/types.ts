@@ -128,6 +128,31 @@ export interface IndexReport {
   errors: string[][];
 }
 
+// --- /api/upload and /api/jobs/{job_id} ---
+export type JobState =
+  | "pending"
+  | "extracting"
+  | "indexing"
+  | "embedding"
+  | "extracting_entities"
+  | "done"
+  | "error";
+
+export interface UploadAccepted {
+  job_id: string;
+}
+
+export interface JobStatus {
+  job_id: string;
+  state: JobState;
+  phase: string;
+  processed: number;
+  total: number;
+  markdown_files: number;
+  report: IndexReport | null;
+  error: string | null;
+}
+
 // --- /api/health ---
 export interface Health {
   status: string;

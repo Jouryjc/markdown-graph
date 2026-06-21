@@ -12,19 +12,23 @@ import {
   getDocuments,
   getEntities,
   getGraph,
+  getJob,
   getNode,
   getStats,
   postQuery,
+  uploadArchive,
 } from "./client";
 import type {
   DocumentDetail,
   DocumentSummary,
   EntitySummary,
   GraphResponse,
+  JobStatus,
   NodeDetail,
   QueryRequest,
   QueryResponse,
   Stats,
+  UploadAccepted,
 } from "./types";
 
 export function useStats(): UseQueryResult<Stats> {
@@ -74,5 +78,41 @@ export function useEntities(limit = 20): UseQueryResult<EntitySummary[]> {
   return useQuery({
     queryKey: ["entities", limit],
     queryFn: () => getEntities(limit),
+  });
+}
+
+// --- upload flow ---
+export interface UploadArchiveVars {
+  file: File;
+  full: boolean;
+  onProgress?: (fraction: number) => void;
+}
+
+export function useUploadArchive(): UseMutationResult<
+  UploadAccepted,
+  unknown,
+  UploadArchiveVars
+> {
+  return useMutation({
+    mutationFn: ({ file, full, onProgress }: UploadArchiveVars) =>
+      uploadArchive(file, full, onProgress),
+  });
+}
+
+const JOB_TERMINAL = new Set<JobStatus["state"]>(["done", "error"]);
+
+export function useJob(jobId: string | null): UseQueryResult<JobStatus> {
+  return useQuery({
+    queryKey: ["job", jobId],
+    queryFn: () => getJob(jobId as string),
+    enabled: jobId != null,
+    // Poll while the job is still running; stop once terminal.
+    refetchInterval: (query) => {
+      const data = query.state.data as JobStatus | undefined;
+      if (data && JOB_TERMINAL.has(data.state)) {
+        return false;
+      }
+      return 1000;
+    },
   });
 }
