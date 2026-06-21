@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from posixpath import dirname, join, normpath
@@ -57,7 +58,18 @@ class StructuralIndexer:
         max_chars: int = 1200,
         overlap: int = 150,
         incremental: bool = True,
+        progress: Callable[[str, int, int], None] | None = None,
     ) -> IndexReport:
+        # 进度回调约定：progress(phase, current, total)。可选，None 即静默。
+        # 回调必须不抛异常；防御性地吞掉回调异常，绝不让进度上报影响构建。
+        def _emit(phase: str, current: int, total: int) -> None:
+            if progress is None:
+                return
+            try:
+                progress(phase, current, total)
+            except Exception:  # noqa: BLE001 - 回调异常绝不能让构建崩溃
+                pass
+
         report = IndexReport()
         root_path = Path(root).resolve() if root else None
         docs: list[_DocCtx] = []
@@ -107,12 +119,13 @@ class StructuralIndexer:
                 self.store.delete_document(stored_id)
                 report.removed += 1
 
-        for ctx in built:
+        for i, ctx in enumerate(built, start=1):
             try:
                 self._build_doc(ctx, report)
                 report.indexed += 1
             except Exception as exc:  # noqa: BLE001
                 report.errors.append((ctx.relpath, repr(exc)))
+            _emit("indexing", i, len(built))
 
         # Pass 3: 仅对 built 解析跨文档链接（unchanged doc 的链接原样保留）
         for ctx in built:
@@ -126,12 +139,17 @@ class StructuralIndexer:
                 report.errors.append((ctx.relpath, repr(exc)))
 
         if self.vector_store is not None and self.embedder is not None:
+            _emit("embedding", 0, 1)
             self._embed_and_store(built, report)
+            _emit("embedding", 1, 1)
         if self.llm is not None:
+            _emit("extracting_entities", 0, 1)
             self._extract_and_store(built, report)
+            _emit("extracting_entities", 1, 1)
 
         # 孤儿回收：在 reconcile + build + extract 之后，确保不误删待重建的实体
         report.reclaimed = self.store.reclaim_orphans()
+        _emit("done", 1, 1)
         return report
 
     def _relpath(self, f: Path, root: Path | None) -> str:
