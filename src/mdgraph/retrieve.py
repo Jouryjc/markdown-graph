@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from mdgraph.fusion import reciprocal_rank_fusion
+from mdgraph.ids import doc_id_from_chunk
 from mdgraph.models import EdgeType
 from mdgraph.providers.base import EmbeddingProvider
 from mdgraph.store.graph_store import GraphStore
@@ -29,6 +30,7 @@ class Context(BaseModel):
     chunk_id: str
     text: str
     score: float
+    doc_id: str = ""
     source_path: str = ""
     heading_path: str = ""
 
@@ -70,6 +72,7 @@ class Retriever:
                 chunk_id=r["chunk_id"],
                 text=r["text"],
                 score=1.0 / (1.0 + r["distance"]),
+                doc_id=doc_id_from_chunk(r["chunk_id"]),
                 source_path=r["meta"].get("source_path", ""),
                 heading_path=r["meta"].get("heading_path", ""),
             )
@@ -139,16 +142,23 @@ class Retriever:
                 chunk_id=chunk_id,
                 text=r["text"],
                 score=score,
+                doc_id=doc_id_from_chunk(chunk_id),
                 source_path=r["meta"].get("source_path", ""),
                 heading_path=r["meta"].get("heading_path", ""),
             )
         ch = chunk_map.get(chunk_id)
         if ch is None:
-            return Context(chunk_id=chunk_id, text="", score=score)
+            return Context(
+                chunk_id=chunk_id,
+                text="",
+                score=score,
+                doc_id=doc_id_from_chunk(chunk_id),
+            )
         return Context(
             chunk_id=chunk_id,
             text=ch.text,
             score=score,
+            doc_id=ch.doc_id,
             source_path=doc_paths.get(ch.doc_id, ""),
             heading_path=ch.section_path,
         )
