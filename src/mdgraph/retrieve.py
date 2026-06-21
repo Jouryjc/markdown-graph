@@ -21,8 +21,9 @@ _EXPAND_EDGES = [
 class Context(BaseModel):
     """一条检索命中。
 
-    score 在 dual（图+向量）模式下是 RRF 融合值，在纯向量模式下是
-    1/(1+距离) 相似度——同字段不同量纲，二者都「越大越相关」，仅用于排序。
+    score 在 dual（图+向量）模式下是**加权** RRF 融合值（图权重 < 向量权重，
+    抑制 hub 节点过度放大），在纯向量模式下是 1/(1+距离) 相似度——同字段不同
+    量纲，二者都「越大越相关」，仅用于排序。
     """
 
     chunk_id: str
@@ -43,10 +44,16 @@ class Retriever:
         vector_store: VectorStore,
         embedder: EmbeddingProvider,
         graph_store: GraphStore | None = None,
+        vector_weight: float = 1.0,
+        graph_weight: float = 0.5,
+        per_doc_cap: int | None = 2,
     ) -> None:
         self.vector_store = vector_store
         self.embedder = embedder
         self.graph_store = graph_store
+        self.vector_weight = vector_weight
+        self.graph_weight = graph_weight
+        self.per_doc_cap = per_doc_cap
 
     def retrieve(self, query: str, k: int = 8, hops: int = 2) -> RetrievalResult:
         if not query.strip():
@@ -78,18 +85,39 @@ class Retriever:
         chunk_map = self.graph_store.get_chunks(list(dist))  # 一次批量取，消 N+1
         graph_chunks = [n for n in dist if n in chunk_map]
         graph_ranking = sorted(graph_chunks, key=lambda n: (dist[n], n))
-        fused = reciprocal_rank_fusion([vector_ranking, graph_ranking])
-        ordered = sorted(fused, key=lambda c: (-fused[c], c))[:k]
-        # 图独有命中块的 source_path：按 doc_id 去重后批量取 document
+        fused = reciprocal_rank_fusion(
+            [vector_ranking, graph_ranking],
+            weights=[self.vector_weight, self.graph_weight],
+        )
+        # 所有图独有候选的 source_path（用于每文档限流 + 装配），按 doc_id 去重批量取
         doc_ids = {
             chunk_map[cid].doc_id
-            for cid in ordered
+            for cid in fused
             if cid not in row_by_id and cid in chunk_map
         }
         doc_paths: dict[str, str] = {}
         for did in doc_ids:
             doc = self.graph_store.get_document(did)
             doc_paths[did] = doc.path if doc is not None else ""
+
+        def _source(cid: str) -> str:
+            if cid in row_by_id:
+                return row_by_id[cid]["meta"].get("source_path", "")
+            ch = chunk_map.get(cid)
+            return doc_paths.get(ch.doc_id, "") if ch is not None else ""
+
+        # 按融合分降序贪心选 top-k，每个 source_path 最多 per_doc_cap 块（严格上限）
+        ordered: list[str] = []
+        per_doc: dict[str, int] = {}
+        for cid in sorted(fused, key=lambda c: (-fused[c], c)):
+            if len(ordered) >= k:
+                break
+            src = _source(cid)
+            if self.per_doc_cap is not None and per_doc.get(src, 0) >= self.per_doc_cap:
+                continue
+            ordered.append(cid)
+            per_doc[src] = per_doc.get(src, 0) + 1
+
         contexts = [
             self._context(cid, fused[cid], row_by_id, chunk_map, doc_paths)
             for cid in ordered
