@@ -20,6 +20,7 @@ from .routers import (
     index,
     query,
     stats,
+    upload,
 )
 from .settings import get_settings
 
@@ -38,7 +39,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    for module in (health, stats, query, graph, documents, entities, index):
+    for module in (
+        health,
+        stats,
+        query,
+        graph,
+        documents,
+        entities,
+        index,
+        upload,
+    ):
         app.include_router(module.router)
 
     # Serve the built SPA at / if it exists. html=True so client-side routes

@@ -153,6 +153,35 @@ class IndexReport(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# /api/upload and /api/jobs/{job_id}
+# ---------------------------------------------------------------------------
+JobState = Literal[
+    "pending",
+    "extracting",
+    "indexing",
+    "embedding",
+    "extracting_entities",
+    "done",
+    "error",
+]
+
+
+class UploadAccepted(BaseModel):
+    job_id: str
+
+
+class JobStatus(BaseModel):
+    job_id: str
+    state: JobState = "pending"
+    phase: str = ""
+    processed: int = 0
+    total: int = 0
+    markdown_files: int = 0
+    report: IndexReport | None = None
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # /api/health
 # ---------------------------------------------------------------------------
 class Health(BaseModel):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from mdgraph.indexer import IndexReport, StructuralIndexer
@@ -39,12 +40,18 @@ class MarkdownGraph:
         max_chars: int = 1200,
         overlap: int = 150,
         incremental: bool = True,
+        progress: Callable[[str, int, int], None] | None = None,
     ) -> IndexReport:
         paths = [Path(p) for p in paths]
         if root is None and len(paths) == 1 and paths[0].is_dir():
             root = paths[0]
         return self.indexer.index(
-            paths, root=root, max_chars=max_chars, overlap=overlap, incremental=incremental
+            paths,
+            root=root,
+            max_chars=max_chars,
+            overlap=overlap,
+            incremental=incremental,
+            progress=progress,
         )
 
     def retrieve(self, query: str, k: int = 8) -> RetrievalResult:

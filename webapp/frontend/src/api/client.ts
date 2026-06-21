@@ -8,11 +8,13 @@ import type {
   GraphResponse,
   IndexReport,
   IndexRequest,
+  JobStatus,
   NodeDetail,
   QueryRequest,
   QueryResponse,
   Stats,
   Subgraph,
+  UploadAccepted,
 } from "./types";
 
 const BASE = "/api";
@@ -92,4 +94,62 @@ export function postIndex(body: IndexRequest): Promise<IndexReport> {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+// --- /api/upload (multipart) ---
+// Uses XMLHttpRequest to surface upload progress (0..1). Rejects with ApiError
+// on non-2xx, parsing the JSON `detail` field when present.
+export function uploadArchive(
+  file: File,
+  full: boolean,
+  onProgress?: (fraction: number) => void,
+): Promise<UploadAccepted> {
+  return new Promise<UploadAccepted>((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("full", full ? "true" : "false");
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}/upload`);
+
+    if (onProgress) {
+      xhr.upload.onprogress = (ev: ProgressEvent) => {
+        if (ev.lengthComputable && ev.total > 0) {
+          onProgress(ev.loaded / ev.total);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      const status = xhr.status;
+      let body: unknown = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = null;
+      }
+      if (status >= 200 && status < 300) {
+        resolve(body as UploadAccepted);
+        return;
+      }
+      let detail = `${status} ${xhr.statusText}`;
+      if (
+        body &&
+        typeof (body as { detail?: unknown }).detail === "string"
+      ) {
+        detail = (body as { detail: string }).detail;
+      }
+      reject(new ApiError(status, detail));
+    };
+
+    xhr.onerror = () => reject(new ApiError(0, "network error during upload"));
+    xhr.onabort = () => reject(new ApiError(0, "upload aborted"));
+
+    xhr.send(form);
+  });
+}
+
+// --- /api/jobs/{job_id} ---
+export function getJob(jobId: string): Promise<JobStatus> {
+  return request<JobStatus>(`/jobs/${encodeURIComponent(jobId)}`);
 }
