@@ -89,10 +89,16 @@ def _resolved_within(dest_real: str, rel: str) -> str:
 
 
 def _normalize_md_name(rel: str) -> str:
-    """``.markdown`` -> ``.md``; preserve everything else of the relpath."""
-    suffix = Path(rel).suffix.lower()
-    if suffix == ".markdown":
-        return rel[: -len(".markdown")] + ".md"
+    """Normalize any-case ``.md`` / ``.markdown`` suffix to lowercase ``.md``.
+
+    The engine discovers files by globbing ``*.md`` (case-sensitive on
+    case-sensitive filesystems), so an uppercase ``FOO.MD`` or ``FOO.MARKDOWN``
+    would be written but never indexed — counted yet invisible. Lowercasing the
+    suffix keeps the written-file count and the index in sync across platforms.
+    """
+    suffix = Path(rel).suffix
+    if suffix.lower() in _MARKDOWN_SUFFIXES:
+        return rel[: -len(suffix)] + ".md"
     return rel
 
 

@@ -9,7 +9,9 @@ venv/
 .fastembed_cache/
 examples/.demo_store/
 
+# node (anywhere — vitest/vite may create a cache dir at repo root)
+node_modules/
+
 # webapp
-webapp/frontend/node_modules/
 webapp/frontend/dist/
 webapp/backend/__pycache__/
