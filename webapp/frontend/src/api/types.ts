@@ -157,3 +157,46 @@ export interface JobStatus {
 export interface Health {
   status: string;
 }
+
+// --- /api/config ---
+// Mirrors webapp/backend/config_schema.py / config_store.py. The schema there
+// is the single source of truth; keep these in sync.
+export type ConfigFieldType = "string" | "int" | "url" | "secret";
+export type ConfigSource = "overlay" | "env" | "default";
+
+export interface ConfigField {
+  key: string;
+  label: string;
+  type: ConfigFieldType;
+  value: string;
+  default: string;
+  source: ConfigSource;
+  secret: boolean;
+  high_risk: boolean;
+  applies: "live" | "rebuild";
+  description: string;
+  is_set: boolean;
+}
+
+export interface ConfigGroup {
+  key: string;
+  label: string;
+  fields: ConfigField[];
+}
+
+export interface ConfigResponse {
+  groups: ConfigGroup[];
+}
+
+export interface UpdateConfigRequest {
+  values: Record<string, string | null>;
+}
+
+export interface UpdateConfigResponse {
+  config: ConfigResponse;
+  warnings: string[];
+}
+
+export interface ResetConfigResponse {
+  config: ConfigResponse;
+}

@@ -12,7 +12,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from .config_store import apply_overlay_to_env, load_overlay
 from .routers import (
+    config,
     documents,
     entities,
     graph,
@@ -28,6 +30,10 @@ _FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
 def create_app() -> FastAPI:
+    # Apply the persisted config overlay to os.environ BEFORE reading settings /
+    # building the engine, so a saved overlay auto-takes-effect on a fresh process.
+    apply_overlay_to_env(load_overlay())
+
     settings = get_settings()
     app = FastAPI(title="mdgraph webapp")
 
@@ -48,6 +54,7 @@ def create_app() -> FastAPI:
         entities,
         index,
         upload,
+        config,
     ):
         app.include_router(module.router)
 

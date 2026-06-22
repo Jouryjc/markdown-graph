@@ -2,6 +2,7 @@
 // non-2xx with the parsed `detail` from the JSON body when available.
 
 import type {
+  ConfigResponse,
   DocumentDetail,
   DocumentSummary,
   EntitySummary,
@@ -12,8 +13,10 @@ import type {
   NodeDetail,
   QueryRequest,
   QueryResponse,
+  ResetConfigResponse,
   Stats,
   Subgraph,
+  UpdateConfigResponse,
   UploadAccepted,
 } from "./types";
 
@@ -152,4 +155,24 @@ export function uploadArchive(
 // --- /api/jobs/{job_id} ---
 export function getJob(jobId: string): Promise<JobStatus> {
   return request<JobStatus>(`/jobs/${encodeURIComponent(jobId)}`);
+}
+
+// --- /api/config ---
+export function getConfig(): Promise<ConfigResponse> {
+  return request<ConfigResponse>("/config");
+}
+
+// Only the dirty fields go in `values`; null removes a key from the overlay
+// (falling back to env/default).
+export function updateConfig(
+  values: Record<string, string | null>,
+): Promise<UpdateConfigResponse> {
+  return request<UpdateConfigResponse>("/config", {
+    method: "PUT",
+    body: JSON.stringify({ values }),
+  });
+}
+
+export function resetConfig(): Promise<ResetConfigResponse> {
+  return request<ResetConfigResponse>("/config/reset", { method: "POST" });
 }
