@@ -46,9 +46,58 @@ uvicorn webapp.backend.app:app --reload --port 8000
 Environment variables:
 
 - `MDGRAPH_STORE` — store dir (default `./.mdgraph`, resolved against repo root).
-- `MDGRAPH_EMBEDDER` — dotted `module:Class` embedder
-  (default `mdgraph.providers.fastembed_embedder:FastEmbedProvider`).
+- `MDGRAPH_EMBEDDER` — embedder spec (default
+  `mdgraph.providers.fastembed_embedder:FastEmbedProvider`). See
+  [Configuring the embedding model](#configuring-the-embedding-model) below.
 - `MDGRAPH_LLM` — optional dotted `module:Class` LLM extractor (for re-indexing).
+
+### Configuring the embedding model
+
+`MDGRAPH_EMBEDDER` (and the CLI `--embedder`) accept three forms:
+
+- **`fastembed:<model>`** — local fastembed model, no API key. `<model>` is a
+  fastembed model name (default `BAAI/bge-small-zh-v1.5`):
+
+  ```bash
+  MDGRAPH_EMBEDDER=fastembed:BAAI/bge-m3
+  ```
+
+- **`openai:<model>`** — any OpenAI-compatible embeddings endpoint. By default it
+  targets a **local Ollama** (`base_url=http://localhost:11434/v1`,
+  `api_key=ollama`, `model=nomic-embed-text`) so it works out of the box. To point
+  at **cloud OpenAI**, set all three env vars:
+
+  ```bash
+  MDGRAPH_EMBEDDER=openai:text-embedding-3-small
+  MDGRAPH_EMBED_BASE_URL=https://api.openai.com/v1
+  MDGRAPH_EMBED_API_KEY=sk-...
+  # MDGRAPH_EMBED_MODEL also overrides the model if the spec omits it
+  ```
+
+  The `<model>` in the spec sets the model; `MDGRAPH_EMBED_BASE_URL` /
+  `MDGRAPH_EMBED_API_KEY` / `MDGRAPH_EMBED_MODEL` configure the endpoint
+  (the spec never carries the base_url or API key, so secrets stay out of
+  command history/logs).
+
+- **dotted path** — `module:Class` or `module.Class`, constructed with no args
+  (back-compat; the default value above resolves this way).
+
+A bare model name **must** carry a short-name prefix
+(`fastembed:BAAI/bge-m3`, not `BAAI/bge-m3`); an unprefixed name is treated as an
+import path and fails.
+
+> ⚠️ **RE-INDEX CAVEAT — changing the embedder requires rebuilding the store.**
+> The vector table name is `vectors_<sanitized embedder.name>_<dim>`. Switching
+> the embedding model (different name or dim — or even the same name over a
+> different vector space/endpoint) targets a **different table**, so old vectors
+> are not used and queries return nothing or meaningless results. **The query
+> embedder MUST match the build embedder.** After changing `MDGRAPH_EMBEDDER`
+> (webapp) or `--embedder` (CLI), rebuild:
+>
+> - CLI: `python -m mdgraph.cli index <paths> --store ./.mdgraph --full --embedder <new spec>`,
+>   then `query` with the **same** spec.
+> - webapp: re-upload / rebuild the store after changing `MDGRAPH_EMBEDDER`, and
+>   keep build + query on the same embedder configuration.
 
 Graceful degradation: if the embedder import/deps fail or the store has no
 vectors, `stats` / `graph` / `documents` / `node` still work; `query` / `index`

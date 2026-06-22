@@ -13,12 +13,17 @@ from typing import List, Optional
 import typer
 
 from mdgraph.engine import MarkdownGraph
+from mdgraph.providers.registry import resolve_embedder
 
 app = typer.Typer(add_completion=False, help="markdown 图谱 + 向量双引擎检索引擎")
 
+_EMBEDDER_HELP = (
+    "embedder spec：短名 fastembed:<model> / openai:<model>，或 dotted-path pkg.mod:attr"
+)
+
 
 def _load(dotted: str):
-    """加载 dotted-path `pkg.mod:attr` 指向的 provider 并无参构造。"""
+    """加载 dotted-path `pkg.mod:attr` 指向的 provider 并无参构造（仍用于 --llm）。"""
     if ":" not in dotted:
         raise typer.BadParameter(f"provider 须为 'pkg.mod:attr' 形式：{dotted}")
     mod_path, _, attr = dotted.partition(":")
@@ -32,17 +37,25 @@ def _load(dotted: str):
         raise typer.BadParameter(f"构造 provider {dotted} 失败: {exc}")
 
 
+def _load_embedder(spec: str):
+    """经注册表解析 --embedder spec；失败包成 typer.BadParameter 保持现有错误呈现。"""
+    try:
+        return resolve_embedder(spec)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+
+
 @app.command()
 def index(
     paths: List[Path] = typer.Argument(..., help="markdown 文件或目录"),
     store: Path = typer.Option(Path(".mdgraph"), "--store", help="存储目录"),
-    embedder: Optional[str] = typer.Option(None, "--embedder", help="pkg.mod:attr"),
+    embedder: Optional[str] = typer.Option(None, "--embedder", help=_EMBEDDER_HELP),
     llm: Optional[str] = typer.Option(None, "--llm", help="pkg.mod:attr"),
     full: bool = typer.Option(False, "--full", help="全量重建（不增量）"),
     max_chars: int = typer.Option(1200, "--max-chars"),
     overlap: int = typer.Option(150, "--overlap"),
 ) -> None:
-    emb = _load(embedder) if embedder else None
+    emb = _load_embedder(embedder) if embedder else None
     llm_obj = _load(llm) if llm else None
     mg = MarkdownGraph(store, embedder=emb, llm=llm_obj)
     try:
@@ -64,16 +77,16 @@ def index(
 def query(
     text: str = typer.Argument(..., help="查询文本"),
     store: Path = typer.Option(Path(".mdgraph"), "--store"),
-    embedder: Optional[str] = typer.Option(None, "--embedder", help="pkg.mod:attr"),
+    embedder: Optional[str] = typer.Option(None, "--embedder", help=_EMBEDDER_HELP),
     k: int = typer.Option(8, "-k", "--k", help="返回条数"),
     json_out: bool = typer.Option(False, "--json", help="输出完整 JSON"),
 ) -> None:
     if not embedder:
         typer.echo(
-            "query 需要 --embedder pkg.mod:attr 配置 embedding provider", err=True
+            "query 需要 --embedder 配置 embedding provider（短名或 dotted-path）", err=True
         )
         raise typer.Exit(code=1)
-    emb = _load(embedder)
+    emb = _load_embedder(embedder)
     mg = MarkdownGraph(store, embedder=emb)
     try:
         res = mg.retrieve(text, k=k)
@@ -90,9 +103,9 @@ def query(
 @app.command()
 def stats(
     store: Path = typer.Option(Path(".mdgraph"), "--store"),
-    embedder: Optional[str] = typer.Option(None, "--embedder", help="pkg.mod:attr"),
+    embedder: Optional[str] = typer.Option(None, "--embedder", help=_EMBEDDER_HELP),
 ) -> None:
-    emb = _load(embedder) if embedder else None
+    emb = _load_embedder(embedder) if embedder else None
     mg = MarkdownGraph(store, embedder=emb)
     try:
         for key, value in mg.stats().items():
