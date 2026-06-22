@@ -41,6 +41,7 @@ import threading
 from typing import Any
 
 from mdgraph import MarkdownGraph
+from mdgraph.providers.registry import resolve_embedder
 
 from .settings import Settings, get_settings
 
@@ -89,8 +90,7 @@ def _build_embedder(settings: Settings):
     and records the error message in the module-level ``_embedder_error``."""
     global _embedder_error
     try:
-        cls = _load_dotted(settings.embedder_path)
-        return cls()
+        return resolve_embedder(settings.embedder_path)
     except Exception as exc:  # noqa: BLE001 — degrade gracefully
         _embedder_error = f"embedder unavailable ({settings.embedder_path}): {exc}"
         return None
