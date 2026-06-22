@@ -1,11 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { Search, Share2, BarChart3, Upload } from "lucide-react";
+import { Search, Share2, BarChart3, Upload, Settings } from "lucide-react";
 
 const links = [
   { to: "/", label: "Search", icon: Search, end: true },
   { to: "/graph", label: "Graph", icon: Share2, end: false },
   { to: "/stats", label: "Stats", icon: BarChart3, end: false },
   { to: "/upload", label: "上传", icon: Upload, end: false },
+  { to: "/settings", label: "设置", icon: Settings, end: false },
 ];
 
 export default function NavBar() {

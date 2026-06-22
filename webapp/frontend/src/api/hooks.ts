@@ -3,11 +3,13 @@
 import {
   useMutation,
   useQuery,
+  useQueryClient,
   type UseMutationResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 
 import {
+  getConfig,
   getDocument,
   getDocuments,
   getEntities,
@@ -16,9 +18,12 @@ import {
   getNode,
   getStats,
   postQuery,
+  resetConfig,
+  updateConfig,
   uploadArchive,
 } from "./client";
 import type {
+  ConfigResponse,
   DocumentDetail,
   DocumentSummary,
   EntitySummary,
@@ -27,7 +32,9 @@ import type {
   NodeDetail,
   QueryRequest,
   QueryResponse,
+  ResetConfigResponse,
   Stats,
+  UpdateConfigResponse,
   UploadAccepted,
 } from "./types";
 
@@ -96,6 +103,40 @@ export function useUploadArchive(): UseMutationResult<
   return useMutation({
     mutationFn: ({ file, full, onProgress }: UploadArchiveVars) =>
       uploadArchive(file, full, onProgress),
+  });
+}
+
+// --- config flow ---
+export function useConfig(): UseQueryResult<ConfigResponse> {
+  return useQuery({ queryKey: ["config"], queryFn: getConfig });
+}
+
+export function useUpdateConfig(): UseMutationResult<
+  UpdateConfigResponse,
+  unknown,
+  Record<string, string | null>
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: Record<string, string | null>) =>
+      updateConfig(values),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+}
+
+export function useResetConfig(): UseMutationResult<
+  ResetConfigResponse,
+  unknown,
+  void
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => resetConfig(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["config"] });
+    },
   });
 }
 
