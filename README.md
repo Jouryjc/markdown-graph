@@ -1,5 +1,23 @@
 # markdown-graph (mdgraph)
 
+<p align="center">
+  <a href="https://github.com/Jouryjc/markdown-graph/actions/workflows/ci.yml"><img src="https://github.com/Jouryjc/markdown-graph/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB" alt="React">
+  <img src="https://img.shields.io/badge/LanceDB-vector%20store-8A2BE2" alt="LanceDB">
+  <img src="https://img.shields.io/badge/NetworkX-graph-2C5BB4" alt="NetworkX">
+  <img src="https://img.shields.io/badge/SQLite-source%20of%20truth-003B57?logo=sqlite&logoColor=white" alt="SQLite">
+</p>
+
+<p align="center"><b>简体中文</b> | <a href="README.en.md">English</a></p>
+
 > Markdown 知识图谱 + 向量双引擎检索 — 把一堆 `.md` 文档同时索引成**结构/语义图谱**与**向量库**，检索时让两路召回相互增强（vector recall × graph expand × 加权 RRF 融合）。
 
 整条核心链路**纯离线、确定性、零外部凭证**（默认本地 fastembed 向量 + 本地 Ollama 实体抽取），可单测、可复现；同时提供命令行（CLI）与一套 FastAPI + React 的 Web 平台。
@@ -441,3 +459,18 @@ cd webapp/frontend && npm test
 ```
 
 引擎层与 Web 测试均使用确定性 Mock providers（`DeterministicEmbeddingProvider` / `MockLLMProvider`），保证离线可复现。
+
+---
+
+## 贡献
+
+欢迎提 issue 与 PR！开发前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。提 PR 前请确保本地通过 CI 同款门禁：
+
+```bash
+ruff check src tests webapp/backend
+python -m pytest tests webapp/backend/tests -q
+```
+
+## License
+
+[MIT](LICENSE) © jouryjc

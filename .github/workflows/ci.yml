@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint & test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Core engine + web extra + dev (pytest); httpx powers the FastAPI
+          # TestClient; ruff for lint. Heavy provider SDKs (fastembed/openai/
+          # anthropic) are NOT needed — tests use offline Mock providers.
+          pip install -e ".[web,dev]" httpx ruff
+
+      - name: Lint (ruff)
+        run: ruff check src tests webapp/backend
+
+      - name: Test (pytest)
+        run: pytest tests webapp/backend/tests -q
