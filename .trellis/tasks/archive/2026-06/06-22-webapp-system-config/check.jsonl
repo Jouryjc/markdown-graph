@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "校验三层契约一致性、密钥占位符这类派生状态是否集中处理"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端代码质量基线（模板，按现有 router 风格对齐）"}

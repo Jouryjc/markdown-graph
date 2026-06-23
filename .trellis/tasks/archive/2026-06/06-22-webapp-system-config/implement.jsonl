@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "特性跨后端→API→前端三层并新增配置字段集，需保证 schema↔TS 类型↔UI 三处一致、避免各层重复硬编码"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "默认值/常量复用 settings.DEFAULT_* 与 provider 默认串，新增字段时先搜后写避免漂移"}
