@@ -38,6 +38,59 @@ def _first_balanced_object(s: str) -> str | None:
     return None
 
 
+def _parse_entities(raw: object) -> list[ExtractedEntity]:
+    """逐条防御解析 entities：非 list/非 dict、缺 name（或空）的条目跳过，互不影响。"""
+    if not isinstance(raw, list):
+        return []
+    out: list[ExtractedEntity] = []
+    for e in raw:
+        if not isinstance(e, dict):
+            continue
+        name = e.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        out.append(
+            ExtractedEntity(
+                name=name,
+                type=e.get("type") or "concept",
+                description=e.get("description") or "",
+            )
+        )
+    return out
+
+
+def _parse_relations(raw: object) -> list[ExtractedRelation]:
+    """逐条防御解析 relations：兼容对象形与数组形，坏的单条跳过，互不影响。
+
+    - 对象形：``{"source":..,"target":..,"type":..}``（``type`` 缺省 → ``related_to``）。
+    - 数组形：``[source, type, target]``（三元 SVO，匹配观测到的 ``["Claude","is a","product"]``）；
+      ``[source, target]``（二元，``type`` 缺省 → ``related_to``）。
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[ExtractedRelation] = []
+    for r in raw:
+        source = target = rel_type = None
+        if isinstance(r, dict):
+            source, target = r.get("source"), r.get("target")
+            rel_type = r.get("type")
+        elif isinstance(r, (list, tuple)):
+            if len(r) == 3:
+                source, rel_type, target = r
+            elif len(r) == 2:
+                source, target = r
+        if not isinstance(source, str) or not isinstance(target, str) or not source or not target:
+            continue
+        out.append(
+            ExtractedRelation(
+                source=source,
+                target=target,
+                type=rel_type if isinstance(rel_type, str) and rel_type else "related_to",
+            )
+        )
+    return out
+
+
 def _extract_json(text: str) -> dict | None:
     """从可能含 markdown 围栏/前后解释文字的输出里鲁棒提取 JSON 对象。"""
     if not text:
@@ -78,25 +131,14 @@ class LocalLLMExtractor(LLMProvider):
                 ],
             )
             content = resp.choices[0].message.content or ""
-            payload = _extract_json(content)
-            if payload is None:
-                return ExtractionResult()
-            entities = [
-                ExtractedEntity(
-                    name=e["name"],
-                    type=e.get("type") or "concept",
-                    description=e.get("description") or "",
-                )
-                for e in payload.get("entities", [])
-            ]
-            relations = [
-                ExtractedRelation(
-                    source=r["source"],
-                    target=r["target"],
-                    type=r.get("type") or "related_to",
-                )
-                for r in payload.get("relations", [])
-            ]
-            return ExtractionResult(entities=entities, relations=relations)
-        except Exception:  # noqa: BLE001 — 任何失败降级空抽取，交由 indexer 记 warning
+        except Exception:  # noqa: BLE001 — API/网络失败降级空抽取，交由 indexer 记 warning
             return ExtractionResult()
+        # JSON 提取与逐条解析在 try 之外：payload 部分畸形时仍尽量保留可用信号，
+        # entities 与 relations 互不波及（坏的单条跳过），仅完全非 JSON 才整体为空。
+        payload = _extract_json(content)
+        if payload is None:
+            return ExtractionResult()
+        return ExtractionResult(
+            entities=_parse_entities(payload.get("entities", [])),
+            relations=_parse_relations(payload.get("relations", [])),
+        )

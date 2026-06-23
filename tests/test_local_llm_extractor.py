@@ -85,6 +85,51 @@ def test_extract_handles_fenced_and_missing_optional_fields():
     assert res.entities[0].description == ""        # 缺 description → 默认
 
 
+def test_extract_relations_as_array_triples():
+    # 小模型把 relation 输出成数组三元组 [source, type, target]（观测到的真实形态）
+    content = (
+        '{"entities":[{"name":"Claude","type":"product","description":"LLM"}],'
+        '"relations":[["Claude","is a","product"],["Claude","made by","Anthropic"]]}'
+    )
+    res = LocalLLMExtractor(client=_FakeClient(content=content)).extract("x")
+    assert [e.name for e in res.entities] == ["Claude"]
+    assert [(r.source, r.type, r.target) for r in res.relations] == [
+        ("Claude", "is a", "product"),
+        ("Claude", "made by", "Anthropic"),
+    ]
+
+
+def test_extract_relations_array_pair_defaults_type():
+    # 二元数组 [source, target] → type 缺省 related_to
+    content = '{"entities":[],"relations":[["A","B"]]}'
+    res = LocalLLMExtractor(client=_FakeClient(content=content)).extract("x")
+    assert [(r.source, r.target, r.type) for r in res.relations] == [("A", "B", "related_to")]
+
+
+def test_extract_malformed_relations_preserve_entities():
+    # relations 整体畸形（缺字段 / 混入字符串 / 空数组），entities 必须全部保留，坏 relation 跳过
+    content = (
+        '{"entities":[{"name":"RAG"},{"name":"Embedding"}],'
+        '"relations":[{"source":"RAG"},"乱入字符串",[],'
+        '{"source":"RAG","target":"Embedding","type":"依赖"}]}'
+    )
+    res = LocalLLMExtractor(client=_FakeClient(content=content)).extract("x")
+    assert [e.name for e in res.entities] == ["RAG", "Embedding"]
+    # 仅最后一条合法 relation 被保留
+    assert [(r.source, r.target, r.type) for r in res.relations] == [("RAG", "Embedding", "依赖")]
+
+
+def test_extract_skips_entity_missing_name():
+    # 缺 name（或 name 为空）的实体跳过，其余实体正常产出
+    content = (
+        '{"entities":[{"type":"x"},{"name":""},{"name":"OK","type":"概念"}],'
+        '"relations":[]}'
+    )
+    res = LocalLLMExtractor(client=_FakeClient(content=content)).extract("x")
+    assert [e.name for e in res.entities] == ["OK"]
+    assert res.entities[0].type == "概念"
+
+
 def test_extract_malformed_degrades_to_empty():
     res = LocalLLMExtractor(client=_FakeClient(content="抱歉，我无法完成")).extract("x")
     assert res.entities == [] and res.relations == []
