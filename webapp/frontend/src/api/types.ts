@@ -32,7 +32,10 @@ export interface Stats {
 }
 
 // --- /api/query ---
-export type QueryMode = "dual" | "vector";
+// "file" is the LLM file-retrieval scheme: it ignores graph_weight/hops and
+// returns an empty subgraph. The compare UI organizes multiple schemes
+// client-side; the backend single-query contract is unchanged.
+export type QueryMode = "dual" | "vector" | "file";
 
 export interface QueryRequest {
   query: string;

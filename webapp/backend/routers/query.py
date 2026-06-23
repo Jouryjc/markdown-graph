@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 
 from mdgraph.retrieve import Retriever
 
-from ..engine_provider import EngineUnavailable, require_embedder
+from ..engine_provider import EngineUnavailable, get_engine, require_embedder
 from ..schemas import Context, GraphEdge, GraphNode, QueryRequest, QueryResponse, Subgraph
 
 router = APIRouter(prefix="/api", tags=["query"])
@@ -36,8 +36,43 @@ def _to_subgraph(raw: dict) -> Subgraph:
     )
 
 
+def _query_file(body: QueryRequest) -> QueryResponse:
+    """LLM 文件检索分支。
+
+    与 dual/vector 不同，File 检索独立于 embedder/vector：
+    - 只需 ``get_engine()``（图/store 可用即可，缺 embedder 不触发 503）。
+    - 需要 build 时持久化的 ``store_dir/source/``；缺失则 409，提示重建索引。
+    - 子图恒为空（File 方案不产出图）。
+    - LLM/网络失败由 ``retrieve_file`` 降级为空 contexts（200 空列表），不抛崩。
+    """
+    engine = get_engine()
+    source_dir = engine.store_dir / "source"
+    if not source_dir.is_dir():
+        raise HTTPException(
+            status_code=409,
+            detail="该 store 未持久化源文件，请重建索引后再用 File 检索",
+        )
+    result = engine.retrieve_file(body.query, k=body.k)
+    contexts = [
+        Context(
+            chunk_id=c.chunk_id,
+            text=c.text,
+            score=c.score,
+            doc_id=c.doc_id,
+            source_path=c.source_path,
+            heading_path=c.heading_path,
+            from_graph=False,
+        )
+        for c in result.contexts
+    ]
+    return QueryResponse(contexts=contexts, subgraph=Subgraph())
+
+
 @router.post("/query", response_model=QueryResponse)
 def query(body: QueryRequest) -> QueryResponse:
+    if body.mode == "file":
+        return _query_file(body)
+
     try:
         engine = require_embedder()
     except EngineUnavailable as exc:

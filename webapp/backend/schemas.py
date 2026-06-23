@@ -51,7 +51,8 @@ class Stats(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     k: int = Field(default=8, ge=1)
-    mode: Literal["dual", "vector"] = "dual"
+    # "file" 走 LLM 文件检索：不依赖 embedder/vector，graph_weight/hops 对它无意义。
+    mode: Literal["dual", "vector", "file"] = "dual"
     graph_weight: float = 0.5
     per_doc_cap: int | None = 2
     hops: int = 2

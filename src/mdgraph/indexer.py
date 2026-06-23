@@ -45,11 +45,20 @@ class _DocCtx:
 
 
 class StructuralIndexer:
-    def __init__(self, store: GraphStore, vector_store=None, embedder=None, llm=None) -> None:
+    def __init__(
+        self,
+        store: GraphStore,
+        vector_store=None,
+        embedder=None,
+        llm=None,
+        exclude_dir=None,
+    ) -> None:
         self.store = store
         self.vector_store = vector_store
         self.embedder = embedder
         self.llm = llm
+        # 索引时排除的目录（如 store_dir/source 源副本），防止其被 discover 反复纳入索引。
+        self.exclude_dir = exclude_dir
 
     def index(
         self,
@@ -77,7 +86,7 @@ class StructuralIndexer:
         self.path_index: dict[str, str] = {}
         self.slug_index: dict[str, dict[str, int]] = {}
 
-        for f in discover(paths):
+        for f in discover(paths, exclude=[self.exclude_dir] if self.exclude_dir else None):
             relpath = self._relpath(f, root_path)
             try:
                 text, h, mtime = read_file(f)
