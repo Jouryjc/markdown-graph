@@ -2,7 +2,12 @@ import type { QueryMode } from "../api/types";
 
 export interface RetrievalControlsValue {
   k: number;
-  mode: QueryMode;
+  /**
+   * Retrieval schemes to compare. At least one is always selected; the UI
+   * blocks deselecting the last one. Each selected scheme becomes its own
+   * column / query on the SearchPage.
+   */
+  schemes: QueryMode[];
   graph_weight: number;
   per_doc_cap: number | null;
   hops: number;
@@ -12,6 +17,8 @@ export interface RetrievalControlsProps {
   value: RetrievalControlsValue;
   onChange: (value: RetrievalControlsValue) => void;
 }
+
+const SCHEME_OPTIONS: readonly QueryMode[] = ["dual", "vector", "file"];
 
 function clampInt(raw: string, min: number, fallback: number): number {
   const n = parseInt(raw, 10);
@@ -24,49 +31,73 @@ function clampInt(raw: string, min: number, fallback: number): number {
  * change is forwarded through `onChange` with the full next value, so this is
  * fully unit-testable.
  *
- * graph_weight and hops only matter for dual retrieval, so they are disabled
- * when `mode === "vector"`.
+ * `schemes` is a multi-select (dual / vector / file). At least one must stay
+ * selected, so unchecking the final scheme is blocked. graph_weight and hops
+ * only matter for dual retrieval, so they are disabled unless dual is selected.
+ * k and per_doc_cap are global.
  */
 export default function RetrievalControls({
   value,
   onChange,
 }: RetrievalControlsProps) {
-  const isVector = value.mode === "vector";
+  const hasDual = value.schemes.includes("dual");
 
   const patch = (partial: Partial<RetrievalControlsValue>) =>
     onChange({ ...value, ...partial });
+
+  const toggleScheme = (scheme: QueryMode) => {
+    const selected = value.schemes.includes(scheme);
+    if (selected) {
+      // Block deselecting the last scheme — at least one must remain.
+      if (value.schemes.length <= 1) return;
+      patch({ schemes: value.schemes.filter((s) => s !== scheme) });
+      return;
+    }
+    // Keep a stable canonical order (dual, vector, file).
+    patch({
+      schemes: SCHEME_OPTIONS.filter(
+        (s) => value.schemes.includes(s) || s === scheme,
+      ),
+    });
+  };
 
   const unlimited = value.per_doc_cap == null;
 
   return (
     <div className="space-y-4 rounded border border-gray-200 bg-white p-4">
-      {/* mode toggle */}
+      {/* scheme multi-select */}
       <div>
         <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Mode
+          Schemes
         </span>
         <div
-          role="radiogroup"
-          aria-label="Retrieval mode"
+          role="group"
+          aria-label="Retrieval schemes"
           className="inline-flex overflow-hidden rounded border border-gray-300"
         >
-          {(["dual", "vector"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={value.mode === m}
-              onClick={() => patch({ mode: m })}
-              className={[
-                "px-3 py-1.5 text-sm font-medium capitalize",
-                value.mode === m
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50",
-              ].join(" ")}
-            >
-              {m}
-            </button>
-          ))}
+          {SCHEME_OPTIONS.map((scheme) => {
+            const selected = value.schemes.includes(scheme);
+            const isLast = selected && value.schemes.length <= 1;
+            return (
+              <button
+                key={scheme}
+                type="button"
+                role="checkbox"
+                aria-checked={selected}
+                disabled={isLast}
+                onClick={() => toggleScheme(scheme)}
+                className={[
+                  "px-3 py-1.5 text-sm font-medium capitalize",
+                  selected
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-700 hover:bg-gray-50",
+                  isLast ? "cursor-not-allowed" : "",
+                ].join(" ")}
+              >
+                {scheme}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -88,7 +119,7 @@ export default function RetrievalControls({
         />
       </div>
 
-      {/* graph_weight */}
+      {/* graph_weight (dual only) */}
       <div>
         <label
           htmlFor="rc-graph-weight"
@@ -105,14 +136,14 @@ export default function RetrievalControls({
           min={0}
           max={1}
           step={0.05}
-          disabled={isVector}
+          disabled={!hasDual}
           value={value.graph_weight}
           onChange={(e) => patch({ graph_weight: parseFloat(e.target.value) })}
           className="w-full disabled:opacity-40"
         />
       </div>
 
-      {/* per_doc_cap */}
+      {/* per_doc_cap (global) */}
       <div>
         <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
           Per-document cap
@@ -144,7 +175,7 @@ export default function RetrievalControls({
         </div>
       </div>
 
-      {/* hops */}
+      {/* hops (dual only) */}
       <div>
         <label
           htmlFor="rc-hops"
@@ -156,7 +187,7 @@ export default function RetrievalControls({
           id="rc-hops"
           type="number"
           min={1}
-          disabled={isVector}
+          disabled={!hasDual}
           value={value.hops}
           onChange={(e) =>
             patch({ hops: clampInt(e.target.value, 1, value.hops) })
