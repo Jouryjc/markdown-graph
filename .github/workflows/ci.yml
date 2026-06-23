@@ -34,10 +34,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Core engine + web extra + dev (pytest); httpx powers the FastAPI
-          # TestClient; ruff for lint. Heavy provider SDKs (fastembed/openai/
-          # anthropic) are NOT needed — tests use offline Mock providers.
-          pip install -e ".[web,dev]" httpx ruff
+          # Full provider extras so the entire suite runs: engine + web + dev
+          # (pytest) + local (fastembed/openai) + anthropic. httpx powers the
+          # FastAPI TestClient; ruff for lint. Provider tests construct clients
+          # with injected fakes / credential branches — no live network calls.
+          pip install -e ".[web,dev,local,anthropic]" httpx ruff
 
       - name: Lint (ruff)
         run: ruff check src tests webapp/backend
