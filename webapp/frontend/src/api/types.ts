@@ -138,6 +138,7 @@ export type JobState =
   | "indexing"
   | "embedding"
   | "extracting_entities"
+  | "sag_indexing"
   | "done"
   | "error";
 
@@ -154,6 +155,61 @@ export interface JobStatus {
   markdown_files: number;
   report: IndexReport | null;
   error: string | null;
+}
+
+// --- /api/sag/* — SAG 事件/实体双层检索（与 dual/vector/file 完全隔离）---
+export interface SAGSearchRequest {
+  query: string;
+  k: number;
+  max_hops: number;
+}
+
+export interface SAGEntityRef {
+  id: string;
+  name: string;
+  type: string;
+}
+
+export interface SAGEventHit {
+  event_id: string;
+  title: string;
+  summary: string;
+  content: string;
+  category: string;
+  keywords: string[];
+  score: number;
+  hop: number;
+  chunk_id: string;
+  source_path: string;
+  heading_path: string;
+  entities: SAGEntityRef[];
+  connected_via: string[];
+}
+
+export interface SAGTrace {
+  query_entities: string[];
+  seed_event_ids: string[];
+  expanded_event_ids: string[];
+  ranked_event_ids: string[];
+}
+
+export interface SAGSearchResponse {
+  events: SAGEventHit[];
+  entities: SAGEntityRef[];
+  graph: Subgraph;
+  trace: SAGTrace;
+}
+
+export interface SAGStatus {
+  built: boolean;
+  events: number;
+  entities: number;
+  links: number;
+  has_embedder: boolean;
+}
+
+export interface SAGBuildRequest {
+  full: boolean;
 }
 
 // --- /api/health ---

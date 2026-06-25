@@ -48,3 +48,7 @@ def normalize_name(name: str) -> str:
 
 def entity_id(name: str) -> str:
     return "e_" + _h(normalize_name(name))
+
+
+def sag_event_id(chunk_id: str) -> str:
+    return "ev_" + _h(chunk_id)

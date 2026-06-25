@@ -31,6 +31,7 @@ const STATE_LABEL: Record<JobState, string> = {
   indexing: "正在索引文档…",
   embedding: "正在生成向量…",
   extracting_entities: "正在抽取实体与关系…",
+  sag_indexing: "正在构建 SAG 索引…",
   done: "构建完成",
   error: "构建失败",
 };

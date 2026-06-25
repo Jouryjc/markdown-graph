@@ -66,9 +66,13 @@ def _load_dotted(path: str) -> Any:
 
 
 def _make_thread_safe(engine: MarkdownGraph) -> None:
-    """Reopen GraphStore's sqlite connection with check_same_thread=False.
+    """Reopen GraphStore's (and SAGStore's) sqlite connection with
+    check_same_thread=False.
 
-    See module docstring for rationale.
+    See module docstring for rationale. The SAGStore (store_dir/sag.db) is opened
+    the same way GraphStore is (no check_same_thread=False), so FastAPI's
+    threadpool would otherwise raise "SQLite objects created in a thread can only
+    be used in that same thread." when /api/sag/* reads sag.db off-thread.
     """
     store = engine.graph_store
     try:
@@ -82,6 +86,21 @@ def _make_thread_safe(engine: MarkdownGraph) -> None:
             pass
     except Exception:
         # If anything goes wrong, leave the original connection in place.
+        pass
+
+    try:
+        sag_store = engine.sag_store
+        old_sag = sag_store.conn
+        new_sag_conn = sqlite3.connect(sag_store.db_path, check_same_thread=False)
+        new_sag_conn.row_factory = sqlite3.Row
+        sag_store.conn = new_sag_conn
+        try:
+            old_sag.close()
+        except Exception:
+            pass
+    except Exception:
+        # If anything goes wrong (e.g. a stub engine without sag_store), leave
+        # the original connection in place.
         pass
 
 
