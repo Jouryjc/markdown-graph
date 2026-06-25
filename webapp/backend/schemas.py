@@ -162,6 +162,7 @@ JobState = Literal[
     "indexing",
     "embedding",
     "extracting_entities",
+    "sag_indexing",
     "done",
     "error",
 ]
@@ -180,6 +181,63 @@ class JobStatus(BaseModel):
     markdown_files: int = 0
     report: IndexReport | None = None
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# /api/sag/* — SAG 事件/实体双层检索（与 dual/vector/file 完全隔离）
+# ---------------------------------------------------------------------------
+class SAGSearchRequest(BaseModel):
+    query: str
+    k: int = Field(default=8, ge=1)
+    max_hops: int = Field(default=2, ge=0, le=4)
+
+
+class SAGEntityRef(BaseModel):
+    id: str
+    name: str
+    type: str = ""
+
+
+class SAGEventHit(BaseModel):
+    event_id: str
+    title: str
+    summary: str
+    content: str
+    category: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    score: float
+    hop: int = 0
+    chunk_id: str = ""
+    source_path: str = ""
+    heading_path: str = ""
+    entities: list[SAGEntityRef] = Field(default_factory=list)
+    connected_via: list[str] = Field(default_factory=list)
+
+
+class SAGTrace(BaseModel):
+    query_entities: list[str] = Field(default_factory=list)
+    seed_event_ids: list[str] = Field(default_factory=list)
+    expanded_event_ids: list[str] = Field(default_factory=list)
+    ranked_event_ids: list[str] = Field(default_factory=list)
+
+
+class SAGSearchResponse(BaseModel):
+    events: list[SAGEventHit] = Field(default_factory=list)
+    entities: list[SAGEntityRef] = Field(default_factory=list)
+    graph: Subgraph = Field(default_factory=Subgraph)
+    trace: SAGTrace = Field(default_factory=SAGTrace)
+
+
+class SAGStatus(BaseModel):
+    built: bool = False
+    events: int = 0
+    entities: int = 0
+    links: int = 0
+    has_embedder: bool = False
+
+
+class SAGBuildRequest(BaseModel):
+    full: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -16,8 +16,11 @@ import {
   getGraph,
   getJob,
   getNode,
+  getSagStatus,
   getStats,
   postQuery,
+  postSagBuild,
+  postSagSearch,
   resetConfig,
   updateConfig,
   uploadArchive,
@@ -33,6 +36,9 @@ import type {
   QueryRequest,
   QueryResponse,
   ResetConfigResponse,
+  SAGSearchRequest,
+  SAGSearchResponse,
+  SAGStatus,
   Stats,
   UpdateConfigResponse,
   UploadAccepted,
@@ -138,6 +144,42 @@ export function useResetConfig(): UseMutationResult<
       queryClient.invalidateQueries({ queryKey: ["config"] });
     },
   });
+}
+
+// --- SAG flow ---
+// build 端只返回 {job_id}；进度走 useJob(JobStatus)；最终计数走 useSagStatus。
+// onSuccess 不立即 invalidate ["sag-status"]——计数只在 job 轮询到 done 后才准确，
+// 由调用方在 job 完成时 invalidate。
+export function useSagStatus(): UseQueryResult<SAGStatus> {
+  return useQuery({ queryKey: ["sag-status"], queryFn: getSagStatus });
+}
+
+export function useSagBuild(): UseMutationResult<
+  UploadAccepted,
+  unknown,
+  boolean
+> {
+  return useMutation({ mutationFn: (full: boolean) => postSagBuild(full) });
+}
+
+export function useSagSearch(): UseMutationResult<
+  SAGSearchResponse,
+  unknown,
+  SAGSearchRequest
+> {
+  return useMutation({
+    mutationFn: (body: SAGSearchRequest) => postSagSearch(body),
+  });
+}
+
+// Thin invalidation helper: lets a component refresh a query (e.g. ["sag-status"]
+// after a build job reaches a terminal state) without holding the query client
+// directly.
+export function useQueryClientInvalidate(): (queryKey: unknown[]) => void {
+  const queryClient = useQueryClient();
+  return (queryKey: unknown[]) => {
+    queryClient.invalidateQueries({ queryKey });
+  };
 }
 
 const JOB_TERMINAL = new Set<JobStatus["state"]>(["done", "error"]);

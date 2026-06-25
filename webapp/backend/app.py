@@ -21,6 +21,7 @@ from .routers import (
     health,
     index,
     query,
+    sag,
     stats,
     upload,
 )
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
         index,
         upload,
         config,
+        sag,
     ):
         app.include_router(module.router)
 

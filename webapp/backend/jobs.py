@@ -41,6 +41,7 @@ _PHASE_TO_STATE = {
     "indexing": "indexing",
     "embedding": "embedding",
     "extracting_entities": "extracting_entities",
+    "sag": "sag_indexing",
 }
 
 
@@ -188,4 +189,69 @@ def _run_build(job_id: str, archive_path: Path, full: bool) -> None:
             archive_path.unlink(missing_ok=True)
         except Exception:
             pass
+        _build_lock.release()
+
+
+def start_sag_build_job(full: bool) -> str:
+    """Create a job and spawn a daemon thread to build the SAG index.
+
+    SAG indexing runs over the EXISTING store chunks (no upload); it shares the
+    same global build lock as the upload build so the two never write at once.
+    The caller (router) does the 409 pre-check via ``is_build_active()``; this
+    still acquires the lock inside the thread and releases it in a finally.
+    """
+    job_id = create_job()
+    thread = threading.Thread(
+        target=_run_sag_build,
+        args=(job_id, full),
+        name=f"mdgraph-sag-build-{job_id}",
+        daemon=True,
+    )
+    thread.start()
+    return job_id
+
+
+def _run_sag_build(job_id: str, full: bool) -> None:
+    # Share the build lock with the upload build to serialize writes; release in
+    # finally so it can never leak.
+    _build_lock.acquire()
+    engine: MarkdownGraph | None = None
+    try:
+        settings = get_settings()
+
+        # Build with an ISOLATED engine (own sqlite conn + fresh providers) so
+        # the SAG build never shares the serving singleton across threads.
+        embedder = _build_embedder(settings)
+        llm = _build_llm(settings)
+        engine = MarkdownGraph(settings.store_dir, embedder=embedder, llm=llm)
+
+        def _progress(phase: str, current: int, total: int) -> None:
+            state = _PHASE_TO_STATE.get(phase)
+            if state is None:
+                return
+            _update_job(
+                job_id,
+                state=state,
+                phase=phase,
+                processed=current,
+                total=total,
+            )
+
+        engine.build_sag_index(progress=_progress, full=full)
+
+        engine.close()
+        engine = None
+        # Reopen the serving singleton against the freshly written sag.db.
+        reset_engine()
+
+        # report stays None; final counts are served by /api/sag/status.
+        _update_job(job_id, state="done", phase="done")
+    except Exception as exc:  # noqa: BLE001 — surface as job error, never crash thread
+        _update_job(job_id, state="error", error=str(exc))
+    finally:
+        if engine is not None:
+            try:
+                engine.close()
+            except Exception:
+                pass
         _build_lock.release()

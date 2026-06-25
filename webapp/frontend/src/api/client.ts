@@ -14,6 +14,10 @@ import type {
   QueryRequest,
   QueryResponse,
   ResetConfigResponse,
+  SAGBuildRequest,
+  SAGSearchRequest,
+  SAGSearchResponse,
+  SAGStatus,
   Stats,
   Subgraph,
   UpdateConfigResponse,
@@ -175,4 +179,26 @@ export function updateConfig(
 
 export function resetConfig(): Promise<ResetConfigResponse> {
   return request<ResetConfigResponse>("/config/reset", { method: "POST" });
+}
+
+// --- /api/sag/* — SAG 双层检索（独立 sag.db；缺 embedder 也不 503）---
+export function getSagStatus(): Promise<SAGStatus> {
+  return request<SAGStatus>("/sag/status");
+}
+
+export function postSagBuild(full: boolean): Promise<UploadAccepted> {
+  const body: SAGBuildRequest = { full };
+  return request<UploadAccepted>("/sag/build", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function postSagSearch(
+  body: SAGSearchRequest,
+): Promise<SAGSearchResponse> {
+  return request<SAGSearchResponse>("/sag/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
